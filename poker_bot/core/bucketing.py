@@ -70,13 +70,14 @@ def _compute_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) 
     # Usar la misma convención que el resto del código
     # Rango: card // 4 (0=2, 1=3, ..., 11=K, 12=A)
     # Palo: card % 4 (0=♠, 1=♥, 2=♦, 3=♣)
-    ranks = hole_cards // 4
-    suits = hole_cards % 4
+    # IMPORTANTE: Convertir a int32 para evitar overflow
+    ranks = (hole_cards // 4).astype(jnp.int32)
+    suits = (hole_cards % 4).astype(jnp.int32)
 
     # 2. ORDENAR LOS RANGOS
     # Es crucial para que (Rey, Reina) y (Reina, Rey) mapeen al mismo bucket.
-    r1 = jnp.maximum(ranks[0], ranks[1])  # La carta más alta
-    r2 = jnp.minimum(ranks[0], ranks[1])  # La carta más baja
+    r1 = jnp.maximum(ranks[0], ranks[1]).astype(jnp.int32)  # La carta más alta
+    r2 = jnp.minimum(ranks[0], ranks[1]).astype(jnp.int32)  # La carta más baja
 
     is_pair = (r1 == r2)
     is_suited = (suits[0] == suits[1])
@@ -100,14 +101,14 @@ def _compute_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) 
         # para diferenciar dentro de ese grupo.
         # Se suma 13 para no solaparse con los buckets de los pares (0-12).
         # Ejemplo KQs (r1=11, r2=10): 13 + (11*10/2) + 10 = 13 + 55 + 10 = 78
-        return 13 + (r1 * (r1 - 1) // 2) + r2
+        return jnp.int32(13) + (r1 * (r1 - jnp.int32(1)) // jnp.int32(2)) + r2
 
     def offsuit_hand_bucket():
         # Exactamente la misma lógica que las manos "suited", pero con un
         # desplazamiento adicional de 78 para no solaparse con ellas.
         # Los buckets de manos suited van de 13 a 90 (13+77).
         # Los buckets de manos off-suit irán de 91 a 168.
-        return 13 + 78 + (r1 * (r1 - 1) // 2) + r2
+        return jnp.int32(13) + jnp.int32(78) + (r1 * (r1 - jnp.int32(1)) // jnp.int32(2)) + r2
 
     # 4. SELECCIÓN DE LA FÓRMULA CORRECTA
     # lax.cond asegura que solo se ejecute una de estas tres lógicas.
