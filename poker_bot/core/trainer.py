@@ -271,9 +271,9 @@ class PokerTrainer:
         
         all_action_regrets = jax.vmap(compute_regret_vector)(normalized_strengths, game_payoffs)
         
-        # Step 4: Scatter updates (this part still sequential but minimal)
-        for i in range(6):
-            regret_updates = regret_updates.at[info_set_indices[i]].add(all_action_regrets[i])
+        # Step 4: FULLY VECTORIZED scatter updates - NO LOOPS!
+        # This single line replaces the CPU-killing for loop
+        regret_updates = regret_updates.at[info_set_indices].add(all_action_regrets)
         
         return regret_updates
     
