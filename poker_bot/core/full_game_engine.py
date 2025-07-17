@@ -78,22 +78,22 @@ def load_hand_evaluation_lut(lut_path="data/hand_evaluations_hash.pkl"):
         _LUT_LOADED = False
         return False
 
+@jax.jit  
 def evaluate_hand_jax_native(cards):
     """
     JAX-native hand evaluation using lookup table.
     Ultra-fast O(1) evaluation with no CPU callbacks.
     
     Args:
-        cards: Array of card indices (length 5-7)
+        cards: Array of card indices [7], where -1 = invalid card
         
     Returns:
         Hand strength (int32, higher = better)
     """
-    # Filter valid cards (>= 0)
-    valid_cards = cards[cards >= 0]
-    
-    # Hash function: sum of cards
-    hash_key = jnp.sum(valid_cards)
+    # JAX-compatible card filtering: sum only valid cards (>= 0)
+    # Use jnp.where instead of boolean indexing
+    valid_mask = cards >= 0
+    hash_key = jnp.sum(jnp.where(valid_mask, cards, 0))
     hash_idx = hash_key % _LUT_TABLE_SIZE
     
     # Linear probing to find correct entry
@@ -111,11 +111,11 @@ def evaluate_hand_jax_native(cards):
     
     final_idx, found = lax.while_loop(probe_condition, probe_body, (hash_idx, False))
     
-    # Return strength if found, otherwise default to sum-based heuristic
+    # Return strength if found, otherwise default to sum-based heuristic  
     return jnp.where(
         found,
         _LUT_HASH_VALUES[final_idx],
-        jnp.sum(valid_cards).astype(jnp.int32)  # Fallback
+        hash_key.astype(jnp.int32)  # Fallback using valid card sum
     )
 
 # ---------- Helpers ----------
