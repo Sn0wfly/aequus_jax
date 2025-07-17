@@ -1,38 +1,29 @@
-# poker_bot/__init__.py
+# poker_bot/core/__init__.py
 
 """
-Aequus JAX: High-Performance Poker AI
-Pure JAX implementation with clean architecture
+Core training and game engine components for Aequus JAX
 """
 
-__version__ = "2.0.0"
-__author__ = "Aequus Team"
-
-# Core training components
-from .core.trainer import PokerTrainer, TrainerConfig, create_trainer
-from .core.bucketing import compute_info_set_id, validate_bucketing_system
-from .core.validation import PokerAIValidator, quick_validation, detailed_validation
-
-# Bot and evaluation
-from .bot import PokerBot
-from .evaluator import HandEvaluator
-
-# System utilities
-from .gpu_config import get_device_info, init_gpu_environment
-from .memory import get_memory_usage, MemoryMonitor
+from .trainer import PokerTrainer, TrainerConfig, create_trainer
+from .bucketing import compute_info_set_id, validate_bucketing_system  
+from .validation import PokerAIValidator, quick_validation, detailed_validation
+from .full_game_engine import (
+    GameState, 
+    play_one_game, 
+    batch_play,
+    initial_state_for_idx
+)
 
 __all__ = [
-    # Training system
+    # Trainer components
     "PokerTrainer", "TrainerConfig", "create_trainer",
     
-    # Bucketing and validation
+    # Bucketing system
     "compute_info_set_id", "validate_bucketing_system",
+    
+    # Validation system
     "PokerAIValidator", "quick_validation", "detailed_validation",
     
-    # Bot components
-    "PokerBot", "HandEvaluator",
-    
-    # System utilities
-    "get_device_info", "init_gpu_environment",
-    "get_memory_usage", "MemoryMonitor"
+    # Game engine
+    "GameState", "play_one_game", "batch_play", "initial_state_for_idx"
 ]

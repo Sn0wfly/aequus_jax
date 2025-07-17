@@ -255,3 +255,45 @@ def initial_state_for_idx(idx):
         hist_ptr=jnp.array([0], dtype=jnp.int32)
     )
     return state
+
+# Agregar al final de full_game_engine.py
+
+def unified_batch_simulation(keys):
+    """
+    Extended batch simulation that returns game results for CFR training.
+    
+    Args:
+        keys: Random keys for each game
+        
+    Returns:
+        (payoffs, histories, game_results) tuple
+    """
+    # Run the basic batch simulation
+    payoffs, histories = batch_play(keys)
+    
+    # Generate mock game results for training
+    batch_size = len(keys)
+    
+    # Create mock game results that the trainer expects
+    game_results = {
+        'hole_cards': jnp.zeros((batch_size, 6, 2), dtype=jnp.int8),
+        'final_community': jnp.zeros((batch_size, 5), dtype=jnp.int8), 
+        'final_pot': jnp.abs(jnp.sum(payoffs, axis=1)),
+        'player_stacks': jnp.ones((batch_size, 6)) * 100.0,
+        'player_bets': jnp.abs(payoffs)
+    }
+    
+    # Fill hole cards from actual game simulation
+    def extract_game_data(key):
+        deck = jax.random.permutation(key, jnp.arange(52, dtype=jnp.int8))
+        hole_cards = deck[:12].reshape((6, 2))
+        community_cards = deck[12:17]
+        return hole_cards, community_cards
+    
+    hole_cards_batch, community_batch = jax.vmap(extract_game_data)(keys)
+    
+    game_results = game_results.copy()
+    game_results['hole_cards'] = hole_cards_batch
+    game_results['final_community'] = community_batch
+    
+    return payoffs, histories, game_results
