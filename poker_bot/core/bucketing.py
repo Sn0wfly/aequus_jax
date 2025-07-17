@@ -66,12 +66,12 @@ def _compute_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) 
     Computa el bucket de la mano usando una fórmula combinatoria estándar y robusta.
     Garantiza un mapeo único y correcto de las 1326 combinaciones preflop a 169 buckets.
     """
-    # 1. CONVENCIÓN ESTÁNDAR DE RANGO/PALO
-    # Esta es la forma estándar en la industria. Evita confusiones.
-    # Rango: card % 13 (0=2, 1=3, ..., 11=K, 12=A)
-    # Palo: card // 13
-    ranks = hole_cards % 13
-    suits = hole_cards // 13
+    # 1. CONVENCIÓN DE RANGO/PALO (COMPATIBLE CON EL CÓDIGO EXISTENTE)
+    # Usar la misma convención que el resto del código
+    # Rango: card // 4 (0=2, 1=3, ..., 11=K, 12=A)
+    # Palo: card % 4 (0=♠, 1=♥, 2=♦, 3=♣)
+    ranks = hole_cards // 4
+    suits = hole_cards % 4
 
     # 2. ORDENAR LOS RANGOS
     # Es crucial para que (Rey, Reina) y (Reina, Rey) mapeen al mismo bucket.
