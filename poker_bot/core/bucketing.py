@@ -63,38 +63,66 @@ def compute_info_set_id(game_state, player_idx: int) -> jnp.ndarray:
 @jax.jit
 def _compute_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
     """
-    Compute hand strength bucket using card ranks and suits.
-    
-    Args:
-        hole_cards: [2] array of card indices
-        community_cards: [5] array of card indices (-1 for missing)
-        
-    Returns:
-        Hand bucket ID (0-168)
+    Computa el bucket de la mano usando una fórmula combinatoria estándar y robusta.
+    Garantiza un mapeo único y correcto de las 1326 combinaciones preflop a 169 buckets.
     """
-    # Extract ranks and suits from hole cards
-    hole_ranks = hole_cards // 4
-    hole_suits = hole_cards % 4
-    
-    # Basic hand categorization
-    high_rank = jnp.maximum(hole_ranks[0], hole_ranks[1])
-    low_rank = jnp.minimum(hole_ranks[0], hole_ranks[1])
-    is_suited = (hole_suits[0] == hole_suits[1]).astype(jnp.int32)
-    is_pair = (hole_ranks[0] == hole_ranks[1]).astype(jnp.int32)
-    
-    # Preflop bucketing (Pluribus-style)
-    preflop_bucket = lax.cond(
-        is_pair == 1,
-        lambda: high_rank,  # Pairs: 0-12
+    # 1. CONVENCIÓN ESTÁNDAR DE RANGO/PALO
+    # Esta es la forma estándar en la industria. Evita confusiones.
+    # Rango: card % 13 (0=2, 1=3, ..., 11=K, 12=A)
+    # Palo: card // 13
+    ranks = hole_cards % 13
+    suits = hole_cards // 13
+
+    # 2. ORDENAR LOS RANGOS
+    # Es crucial para que (Rey, Reina) y (Reina, Rey) mapeen al mismo bucket.
+    r1 = jnp.maximum(ranks[0], ranks[1])  # La carta más alta
+    r2 = jnp.minimum(ranks[0], ranks[1])  # La carta más baja
+
+    is_pair = (r1 == r2)
+    is_suited = (suits[0] == suits[1])
+
+    # 3. FÓRMULA MATEMÁTICA COMBINATORIA (El Corazón de la Solución)
+    # Esto no son "números mágicos". Es una forma matemática de asignar un índice único
+    # a cada par de cartas.
+
+    def pocket_pair_bucket():
+        # Los pares son los más fáciles. Hay 13.
+        # AA (rango 12) -> bucket 12
+        # KK (rango 11) -> bucket 11
+        # ...
+        # 22 (rango 0) -> bucket 0
+        return r1
+
+    def suited_hand_bucket():
+        # Hay 78 manos "suited" únicas (12+11+...+1). Necesitamos un índice único para cada una.
+        # La fórmula para la suma de los primeros n-1 números es n*(n-1)/2. Esto nos da un
+        # índice base único para cada carta alta (r1). Luego sumamos la carta baja (r2)
+        # para diferenciar dentro de ese grupo.
+        # Se suma 13 para no solaparse con los buckets de los pares (0-12).
+        # Ejemplo KQs (r1=11, r2=10): 13 + (11*10/2) + 10 = 13 + 55 + 10 = 78
+        return 13 + (r1 * (r1 - 1) // 2) + r2
+
+    def offsuit_hand_bucket():
+        # Exactamente la misma lógica que las manos "suited", pero con un
+        # desplazamiento adicional de 78 para no solaparse con ellas.
+        # Los buckets de manos suited van de 13 a 90 (13+77).
+        # Los buckets de manos off-suit irán de 91 a 168.
+        return 13 + 78 + (r1 * (r1 - 1) // 2) + r2
+
+    # 4. SELECCIÓN DE LA FÓRMULA CORRECTA
+    # lax.cond asegura que solo se ejecute una de estas tres lógicas.
+    bucket = lax.cond(
+        is_pair,
+        pocket_pair_bucket,
         lambda: lax.cond(
-            is_suited == 1,
-            lambda: 13 + high_rank * 12 + low_rank,  # Suited: 13-168
-            lambda: 169 + high_rank * 12 + low_rank  # Offsuit: 169+
+            is_suited,
+            suited_hand_bucket,
+            offsuit_hand_bucket
         )
     )
     
-    # Normalize to 0-168 range
-    return jnp.mod(preflop_bucket, PREFLOP_BUCKETS).astype(jnp.int32)
+    # El resultado final es un ID único y garantizado entre 0 y 168.
+    return bucket.astype(jnp.int32)
 
 @jax.jit
 def _compute_street_bucket(community_cards: jnp.ndarray) -> jnp.ndarray:
