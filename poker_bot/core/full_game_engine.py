@@ -259,7 +259,6 @@ def initial_state_for_idx(idx):
 
 # Agregar al final de full_game_engine.py
 
-@jax.jit
 def unified_batch_simulation(keys):
     """
     Extended batch simulation that returns game results for CFR training.
