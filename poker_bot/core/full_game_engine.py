@@ -224,6 +224,7 @@ def play_one_game(key):
     return payoffs, state.action_hist
 
 # ---------- Batch API ----------
+@jax.jit
 def batch_play(keys):
     return jax.vmap(play_one_game)(keys)
 
@@ -258,6 +259,7 @@ def initial_state_for_idx(idx):
 
 # Agregar al final de full_game_engine.py
 
+@jax.jit
 def unified_batch_simulation(keys):
     """
     Extended batch simulation that returns game results for CFR training.
@@ -272,16 +274,7 @@ def unified_batch_simulation(keys):
     payoffs, histories = batch_play(keys)
     
     # Generate mock game results for training
-    batch_size = len(keys)
-    
-    # Create mock game results that the trainer expects
-    game_results = {
-        'hole_cards': jnp.zeros((batch_size, 6, 2), dtype=jnp.int8),
-        'final_community': jnp.zeros((batch_size, 5), dtype=jnp.int8), 
-        'final_pot': jnp.abs(jnp.sum(payoffs, axis=1)),
-        'player_stacks': jnp.ones((batch_size, 6)) * 100.0,
-        'player_bets': jnp.abs(payoffs)
-    }
+    batch_size = keys.shape[0]  # JAX-compatible shape access
     
     # Fill hole cards from actual game simulation
     def extract_game_data(key):
@@ -292,8 +285,18 @@ def unified_batch_simulation(keys):
     
     hole_cards_batch, community_batch = jax.vmap(extract_game_data)(keys)
     
-    game_results = game_results.copy()
-    game_results['hole_cards'] = hole_cards_batch
-    game_results['final_community'] = community_batch
+    # Create all game results arrays directly - avoid dict modifications in JIT
+    final_pot = jnp.abs(jnp.sum(payoffs, axis=1))
+    player_stacks = jnp.ones((batch_size, 6)) * 100.0
+    player_bets = jnp.abs(payoffs)
+    
+    # Create game results as final dictionary 
+    game_results = {
+        'hole_cards': hole_cards_batch,
+        'final_community': community_batch, 
+        'final_pot': final_pot,
+        'player_stacks': player_stacks,
+        'player_bets': player_bets
+    }
     
     return payoffs, histories, game_results
