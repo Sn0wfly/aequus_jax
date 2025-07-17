@@ -1,0 +1,177 @@
+# Aequus JAX Poker AI - Unified Training Configuration
+# All training parameters in one clean, organized file
+
+# ==============================================================================
+# CORE TRAINING PARAMETERS
+# ==============================================================================
+
+# CFR Training Settings
+num_iterations: 10000              # Total CFR iterations
+batch_size: 128                    # Games per training batch
+learning_rate: 0.01                # CFR learning rate
+save_interval: 1000                # Save checkpoint every N iterations
+log_interval: 100                  # Log progress every N iterations
+
+# Strategy Parameters
+num_actions: 6                     # FOLD, CHECK, CALL, BET, RAISE, ALL_IN
+max_info_sets: 50000               # Maximum information sets
+regret_floor: -100.0               # Minimum regret value
+regret_ceiling: 100.0              # Maximum regret value
+strategy_threshold: 0.000001       # Minimum strategy probability
+
+# ==============================================================================
+# GAME CONFIGURATION
+# ==============================================================================
+
+# Poker Game Settings
+num_players: 6                     # Number of players (2-6)
+starting_stack: 1000.0             # Starting stack size
+small_blind: 5.0                   # Small blind amount
+big_blind: 10.0                    # Big blind amount
+
+# Betting Configuration
+bet_sizes:                         # Available bet sizes (pot fractions)
+  - 0.5                           # Half pot
+  - 0.75                          # Three-quarter pot
+  - 1.0                           # Full pot
+  - 1.5                           # 1.5x pot
+  - 2.0                           # 2x pot
+
+# ==============================================================================
+# BUCKETING SYSTEM
+# ==============================================================================
+
+# Hand Abstraction
+preflop_buckets: 169               # Standard preflop hand categories
+position_buckets: 6                # UTG, UTG+1, MP, CO, BTN, BB
+street_buckets: 4                  # Preflop, Flop, Turn, River
+stack_buckets: 20                  # Stack depth categories
+pot_buckets: 10                    # Pot size categories
+
+# Bucketing Weights
+hand_strength_weight: 0.4          # Importance of hand strength
+position_weight: 0.25              # Importance of position
+stack_weight: 0.2                  # Importance of stack depth
+pot_weight: 0.15                   # Importance of pot size
+
+# ==============================================================================
+# PERFORMANCE OPTIMIZATION
+# ==============================================================================
+
+# JAX Configuration
+jit_compile: true                  # Enable JIT compilation
+use_mixed_precision: false         # Use bfloat16 for speed (experimental)
+memory_fraction: 0.75              # GPU memory fraction to use
+
+# Memory Management
+enable_checkpointing: true         # Enable gradient checkpointing
+adaptive_batch_size: false         # Adapt batch size based on memory
+memory_warning_threshold: 0.85     # Memory usage warning threshold
+
+# Parallel Processing
+num_simulation_threads: 4          # Parallel game simulations
+vectorize_batch_ops: true          # Vectorize batch operations
+
+# ==============================================================================
+# VALIDATION AND TESTING
+# ==============================================================================
+
+# Validation Settings
+validate_before_training: true     # Run validation before training
+validate_after_training: true      # Run validation after training
+validation_frequency: 5000         # Validate every N iterations (0 = disable)
+
+# Testing Configuration
+poker_iq_evaluation: true          # Enable Poker IQ testing
+hand_strength_tests: true          # Test hand strength awareness
+position_awareness_tests: true     # Test position awareness
+strategy_diversity_tests: true     # Test strategy diversity
+
+# Test Hands for Validation
+test_hands:
+  premium:
+    - [51, 47]                     # AA (Ace of spades, Ace of clubs)
+    - [50, 46]                     # KK (King of spades, King of clubs)
+  strong:
+    - [42, 38]                     # QJ suited
+    - [41, 35]                     # QT suited
+  marginal:
+    - [34, 30]                     # T9 suited
+    - [37, 33]                     # JT suited
+  weak:
+    - [23, 0]                      # 72o (worst hand)
+    - [19, 4]                      # 63o (very weak)
+
+# ==============================================================================
+# ADVANCED FEATURES (Future Use)
+# ==============================================================================
+
+# Multi-Street Training (Future)
+enable_multi_street: false         # Enable multi-street training
+street_weights: [1.0, 0.8, 0.6, 0.4]  # Learning weights by street
+
+# Opponent Modeling (Future)
+enable_opponent_modeling: false    # Enable opponent modeling
+opponent_history_length: 100       # Hands to remember per opponent
+
+# ICM Training (Future)
+enable_icm_training: false         # Enable ICM-aware training
+tournament_structure: "standard"   # Tournament structure for ICM
+
+# Advanced Abstractions (Future)
+enable_dynamic_bucketing: false    # Dynamic bucket adjustment
+bucket_refinement_frequency: 10000 # Refine buckets every N iterations
+
+# ==============================================================================
+# LOGGING AND OUTPUT
+# ==============================================================================
+
+# Logging Configuration
+log_level: "INFO"                  # DEBUG, INFO, WARNING, ERROR
+log_to_file: true                  # Save logs to file
+log_file_path: "logs/training.log" # Log file path
+
+# Model Saving
+model_save_path: "models/"         # Base path for saved models
+save_best_only: false              # Only save models that improve
+compression: "pickle"              # Model compression format
+
+# Progress Reporting
+show_progress_bar: true            # Show training progress bar
+report_frequency: 100              # Report progress every N iterations
+detailed_statistics: true          # Include detailed training stats
+
+# ==============================================================================
+# EXPERIMENTAL FEATURES
+# ==============================================================================
+
+# Experimental Training Methods
+enable_neural_fictitious_play: false  # Neural Fictitious Play
+enable_deep_cfr: false                 # Deep CFR integration
+enable_regret_circuits: false          # Regret circuit optimization
+
+# Research Features
+save_training_data: false          # Save training data for analysis
+enable_profiling: false            # Enable performance profiling
+research_mode: false               # Enable research logging
+
+# ==============================================================================
+# NOTES
+# ==============================================================================
+
+# Configuration Notes:
+# - Increase batch_size for faster training (requires more memory)
+# - Increase num_iterations for better convergence
+# - Adjust learning_rate if training is unstable
+# - Enable validation for debugging training issues
+# - Use mixed_precision cautiously (may affect convergence)
+#
+# Memory Usage Guidelines:
+# - batch_size 128: ~2GB GPU memory
+# - batch_size 256: ~4GB GPU memory  
+# - batch_size 512: ~8GB GPU memory
+#
+# Performance Tips:
+# - Set num_simulation_threads = number of CPU cores
+# - Enable jit_compile for 3-5x speedup
+# - Use adaptive_batch_size for memory-constrained systems
