@@ -1,34 +1,85 @@
-# Aequus JAX Poker AI - Clean Dependencies
-# JAX-only stack, no CuPy conflicts
+# Aequus JAX Poker AI - Dependencies
+# Updated 2025: Uses official JAX installation method
 
-# Core JAX stack
-jax[cuda12_pip]>=0.4.20
-jaxlib>=0.4.20
+# =============================================================================
+# CORE JAX STACK (OFFICIAL METHOD)
+# =============================================================================
+# JAX Team recommended installation for CUDA 12
+# This automatically installs compatible jaxlib version
+jax[cuda12]>=0.6.0
 
-# Core scientific computing
-numpy>=1.24.0
+# =============================================================================
+# SCIENTIFIC COMPUTING STACK
+# =============================================================================
+# NumPy - FIXED VERSION to avoid JAX conflicts
+numpy>=1.24.0,<2.0
+
+# SciPy for advanced math operations
 scipy>=1.10.0
 
-# Configuration and utilities
-pyyaml>=6.0
-joblib>=1.3.0
-
-# Poker hand evaluation (FIXED VERSION)
+# =============================================================================
+# POKER-SPECIFIC DEPENDENCIES
+# =============================================================================
+# Fast poker hand evaluation
 phevaluator>=0.5.3.1
 
-# Optional: Game theory (if needed)
-open-spiel>=1.3
+# =============================================================================
+# CONFIGURATION & UTILITIES
+# =============================================================================
+# YAML configuration files
+pyyaml>=6.0
 
-# Visualization and monitoring (optional)
-matplotlib>=3.6.0
+# Parallel processing utilities
+joblib>=1.3.0
+
+# Command line interface
+click>=8.0.0
+
+# =============================================================================
+# MONITORING & LOGGING
+# =============================================================================
+# Progress bars and system monitoring
 tqdm>=4.65.0
-tensorboard>=2.13.0
-
-# Development and testing
-pytest>=7.4.0
-
-# System monitoring
 psutil>=5.9.0
 
-# CLI interface
-click>=8.0.0
+# Optional: TensorBoard for training visualization
+tensorboard>=2.13.0
+
+# =============================================================================
+# VISUALIZATION (OPTIONAL)
+# =============================================================================
+# Plotting and analysis
+matplotlib>=3.6.0
+
+# =============================================================================
+# DEVELOPMENT & TESTING
+# =============================================================================
+# Unit testing framework
+pytest>=7.4.0
+
+# =============================================================================
+# GAME THEORY (OPTIONAL)
+# =============================================================================
+# Advanced game theory tools (if needed)
+open-spiel>=1.3
+
+# =============================================================================
+# INSTALLATION NOTES
+# =============================================================================
+# 
+# CORRECT INSTALLATION COMMAND:
+#   pip install --upgrade pip
+#   pip install -r requirements.txt
+#
+# ALTERNATIVE JAX INSTALLATION (if above fails):
+#   pip install --upgrade "jax[cuda12-local]"
+#
+# GPU VERIFICATION:
+#   python -c "import jax; print(jax.devices())"
+#
+# IMPORTANT: 
+# - This setup requires NVIDIA driver >= 525.60.13
+# - Compatible with CUDA 12.x
+# - JAX automatically manages CUDA/cuDNN via pip wheels
+# - Do NOT set LD_LIBRARY_PATH (it can interfere)
+#
