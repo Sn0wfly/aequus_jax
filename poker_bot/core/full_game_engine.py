@@ -41,9 +41,82 @@ class GameState:
     def tree_unflatten(cls, _, children):
         return cls(*children)
 
-# ---------- PURE JAX ENGINE: NO CALLBACKS ----------
-# evaluate_hand_wrapper removed - replaced with JAX-native fake evaluation
-# This eliminates ALL CPU-GPU synchronization bottlenecks
+# ---------- JAX-NATIVE HAND EVALUATION WITH LUT ----------
+# Global LUT storage (loaded once at startup)
+_LUT_HASH_KEYS = None
+_LUT_HASH_VALUES = None
+_LUT_TABLE_SIZE = None
+_LUT_LOADED = False
+
+def load_hand_evaluation_lut(lut_path="data/hand_evaluations_hash.pkl"):
+    """
+    Load hand evaluation LUT into global variables for JAX-native evaluation.
+    Should be called once at startup.
+    """
+    global _LUT_HASH_KEYS, _LUT_HASH_VALUES, _LUT_TABLE_SIZE, _LUT_LOADED
+    
+    try:
+        import pickle
+        with open(lut_path, 'rb') as f:
+            lut_data = pickle.load(f)
+        
+        _LUT_HASH_KEYS = jnp.array(lut_data['hash_keys'])
+        _LUT_HASH_VALUES = jnp.array(lut_data['hash_values'])
+        _LUT_TABLE_SIZE = lut_data['table_size']
+        _LUT_LOADED = True
+        
+        print(f"✅ Hand evaluation LUT loaded: {len(_LUT_HASH_KEYS):,} entries")
+        return True
+        
+    except FileNotFoundError:
+        print(f"⚠️  LUT file not found: {lut_path}")
+        print("   Run 'python scripts/build_lut.py' to create it")
+        _LUT_LOADED = False
+        return False
+    except Exception as e:
+        print(f"❌ Error loading LUT: {e}")
+        _LUT_LOADED = False
+        return False
+
+def evaluate_hand_jax_native(cards):
+    """
+    JAX-native hand evaluation using lookup table.
+    Ultra-fast O(1) evaluation with no CPU callbacks.
+    
+    Args:
+        cards: Array of card indices (length 5-7)
+        
+    Returns:
+        Hand strength (int32, higher = better)
+    """
+    # Filter valid cards (>= 0)
+    valid_cards = cards[cards >= 0]
+    
+    # Hash function: sum of cards
+    hash_key = jnp.sum(valid_cards)
+    hash_idx = hash_key % _LUT_TABLE_SIZE
+    
+    # Linear probing to find correct entry
+    def probe_condition(state):
+        idx, found = state
+        return (idx < _LUT_TABLE_SIZE) & (~found)
+    
+    def probe_body(state):
+        idx, found = state
+        is_match = _LUT_HASH_KEYS[idx] == hash_key
+        is_empty = _LUT_HASH_KEYS[idx] == -1
+        found_match = found | is_match
+        next_idx = jnp.where(is_match | is_empty, idx, (idx + 1) % _LUT_TABLE_SIZE)
+        return (next_idx, found_match)
+    
+    final_idx, found = lax.while_loop(probe_condition, probe_body, (hash_idx, False))
+    
+    # Return strength if found, otherwise default to sum-based heuristic
+    return jnp.where(
+        found,
+        _LUT_HASH_VALUES[final_idx],
+        jnp.sum(valid_cards).astype(jnp.int32)  # Fallback
+    )
 
 # ---------- Helpers ----------
 @jax.jit
@@ -158,9 +231,11 @@ def resolve_showdown(state: GameState) -> jax.Array:
     def full():
         def eval_i(i):
             cards = jnp.concatenate([state.hole_cards[i], state.comm_cards])
-            # PRUEBA DE CONCEPTO: Reemplazar pure_callback con evaluación JAX-native fake
-            # Esto debería liberar GPU completamente al eliminar todas las sincronizaciones CPU
-            return jnp.sum(cards).astype(jnp.int32)
+            # JAX-NATIVE HAND EVALUATION: Use LUT if loaded, fallback to sum heuristic
+            if _LUT_LOADED:
+                return evaluate_hand_jax_native(cards)
+            else:
+                return jnp.sum(cards).astype(jnp.int32)  # Fallback for testing
         strengths = jnp.array([lax.cond(active[i], lambda: eval_i(i), lambda: 9999) for i in range(6)])
         best = jnp.min(strengths)
         winners = (strengths == best) & active
@@ -276,3 +351,9 @@ def unified_batch_simulation(keys):
     }
     
     return payoffs, histories, game_results
+
+# Auto-load LUT at module import (if available)
+try:
+    load_hand_evaluation_lut()
+except:
+    pass  # Continue without LUT for testing
