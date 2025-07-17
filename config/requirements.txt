@@ -1,5 +1,5 @@
 # Aequus JAX Poker AI - Dependencies
-# Updated 2025: Uses official JAX installation method
+# Updated 2025: Uses official JAX installation method.
 
 # =============================================================================
 # CORE JAX STACK (OFFICIAL METHOD)
