@@ -252,7 +252,6 @@ class PokerTrainer:
         
         return regret_updates
     
-    @partial(jax.jit, static_argnums=(0,))
     def _extract_game_state(self, game_results: Dict[str, jnp.ndarray], game_idx: int):
         """
         Extract game state compatible with bucketing system.
