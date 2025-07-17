@@ -23,30 +23,35 @@ STACK_BUCKETS = 20     # Stack depth categories
 POT_BUCKETS = 10       # Pot size categories
 
 @jax.jit
-def compute_info_set_id(game_state, player_idx: int) -> jnp.ndarray:
+def compute_info_set_id(hole_cards: jnp.ndarray, community_cards: jnp.ndarray, 
+                       player_idx: int, pot_size: jnp.ndarray = None) -> jnp.ndarray:
     """
-    Compute unique info set ID for a player in a game state.
-    
-    This is the core function that replaces compute_advanced_info_set
-    from the monolithic trainer.py
+    Compute unique info set ID for a player given their cards and game state.
     
     Args:
-        game_state: GameState from full_game_engine
+        hole_cards: Player's hole cards [2] array
+        community_cards: Community cards [5] array (-1 for missing)
         player_idx: Player index (0-5)
+        pot_size: Current pot size (optional)
         
     Returns:
         Unique info set ID as int32
     """
-    # Extract player's hole cards
-    hole_cards = game_state.hole_cards[player_idx]
-    community_cards = game_state.comm_cards
     
     # Compute bucketing components
     hand_bucket = _compute_hand_bucket(hole_cards, community_cards)
     street_bucket = _compute_street_bucket(community_cards)
     position_bucket = _compute_position_bucket(player_idx)
-    stack_bucket = _compute_stack_bucket(game_state, player_idx)
-    pot_bucket = _compute_pot_bucket(game_state)
+    
+    # Use simplified buckets for pot and stack (can be enhanced later)
+    if pot_size is not None:
+        pot_value = jnp.squeeze(pot_size)
+        stack_bucket = jnp.clip(pot_value / 5.0, 0, STACK_BUCKETS - 1).astype(jnp.int32)
+        pot_bucket = jnp.clip(pot_value / 10.0, 0, POT_BUCKETS - 1).astype(jnp.int32)
+    else:
+        # Default values when pot_size not available
+        stack_bucket = jnp.int32(0)
+        pot_bucket = jnp.int32(0)
     
     # Combine all factors into unique ID
     info_set_id = (

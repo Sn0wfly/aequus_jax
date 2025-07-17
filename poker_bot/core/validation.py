@@ -116,9 +116,8 @@ class PokerAIValidator:
             mock_community = jnp.full(5, -1, dtype=jnp.int8)
             
             for i, hand in enumerate(test_hands):
-                # Create mock game state
-                mock_state = self._create_mock_game_state(hand, mock_community)
-                bucket_id = compute_info_set_id(mock_state, 0)
+                # Use hand directly with compute_info_set_id
+                bucket_id = compute_info_set_id(hand, mock_community, 0)
                 
                 if bucket_id < 0 or bucket_id >= 50000:
                     logger.error(f"❌ Invalid bucket ID: {bucket_id}")
@@ -242,8 +241,7 @@ class PokerAIValidator:
             strategies_by_hand = {}
             
             for hand, name in test_cases:
-                mock_state = self._create_mock_game_state(hand, mock_community)
-                info_set_id = compute_info_set_id(mock_state, 0)
+                info_set_id = compute_info_set_id(hand, mock_community, 0)
                 
                 if info_set_id < strategy.shape[0]:
                     hand_strategy = strategy[info_set_id]

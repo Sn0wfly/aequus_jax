@@ -88,12 +88,31 @@ class PokerBot:
             Best action as string: "FOLD", "CHECK", "CALL", "BET", "RAISE", "ALL_IN"
         """
         try:
-            # Convert to format compatible with bucketing system
-            mock_game_state = self._convert_to_mock_game_state(game_state)
+            # Extract data directly for bucketing system
+            player_id = game_state.get('player_id', 0)
+            
+            # Get hole cards
+            hole_cards = game_state.get('hole_cards', [0, 1])
+            if isinstance(hole_cards, list):
+                hole_cards = jnp.array(hole_cards, dtype=jnp.int8)
+            
+            # Get community cards
+            comm_cards = game_state.get('community_cards', [-1, -1, -1, -1, -1])
+            if isinstance(comm_cards, list):
+                comm_cards = jnp.array(comm_cards, dtype=jnp.int8)
+            
+            # Ensure community cards are correct length
+            if len(comm_cards) < 5:
+                comm_cards = jnp.pad(comm_cards, (0, 5 - len(comm_cards)), 
+                                   constant_values=-1)
+            elif len(comm_cards) > 5:
+                comm_cards = comm_cards[:5]
+            
+            # Get pot size
+            pot_size = jnp.array([game_state.get('pot_size', 50.0)])
             
             # Get info set using new bucketing system
-            player_id = game_state.get('player_id', 0)
-            info_set_idx = compute_info_set_id(mock_game_state, player_id)
+            info_set_idx = compute_info_set_id(hole_cards, comm_cards, player_id, pot_size)
             
             # Convert to Python int
             info_set_idx = int(info_set_idx)
@@ -123,47 +142,7 @@ class PokerBot:
             logger.error(f"Error in get_action: {e}")
             return "CHECK"  # Safe default
 
-    def _convert_to_mock_game_state(self, game_state: dict):
-        """
-        Convert dictionary game state to format compatible with bucketing system.
-        
-        Args:
-            game_state: Game state dictionary
-            
-        Returns:
-            Mock game state object compatible with compute_info_set_id
-        """
-        class MockGameState:
-            def __init__(self):
-                # Extract hole cards
-                hole_cards = game_state.get('hole_cards', [0, 1])
-                if isinstance(hole_cards, list):
-                    hole_cards = np.array(hole_cards, dtype=np.int8)
-                
-                # Create 6-player hole cards array with current player's cards
-                self.hole_cards = np.zeros((6, 2), dtype=np.int8)
-                player_id = game_state.get('player_id', 0)
-                self.hole_cards[player_id] = hole_cards
-                
-                # Extract community cards
-                comm_cards = game_state.get('community_cards', [-1, -1, -1, -1, -1])
-                if isinstance(comm_cards, list):
-                    comm_cards = np.array(comm_cards, dtype=np.int8)
-                
-                # Ensure community cards are correct length
-                if len(comm_cards) < 5:
-                    comm_cards = np.pad(comm_cards, (0, 5 - len(comm_cards)), 
-                                      constant_values=-1)
-                elif len(comm_cards) > 5:
-                    comm_cards = comm_cards[:5]
-                
-                self.comm_cards = comm_cards.astype(np.int8)
-                
-                # Extract pot size
-                pot_size = game_state.get('pot_size', 50.0)
-                self.pot = np.array([pot_size], dtype=np.float32)
-        
-        return MockGameState()
+# _convert_to_mock_game_state removed - no longer needed with direct array passing
 
     def get_strategy_summary(self) -> Dict[str, Any]:
         """

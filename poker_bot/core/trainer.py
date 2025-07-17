@@ -238,10 +238,11 @@ class PokerTrainer:
         
         # Process each player
         for player_idx in range(6):
-            # Get info set for this player/game
-            # Note: We need to extract game state from game_results
-            mock_game_state = self._extract_game_state(game_results, game_idx)
-            info_set_idx = compute_info_set_id(mock_game_state, player_idx)
+            # Get info set for this player/game directly from game_results
+            hole_cards = game_results['hole_cards'][game_idx, player_idx]
+            community_cards = game_results['final_community'][game_idx]
+            pot_size = jnp.array([game_results['final_pot'][game_idx]])
+            info_set_idx = compute_info_set_id(hole_cards, community_cards, player_idx, pot_size)
             
             # Calculate regrets for each action
             player_payoff = game_payoffs[player_idx]
@@ -252,20 +253,7 @@ class PokerTrainer:
         
         return regret_updates
     
-    def _extract_game_state(self, game_results: Dict[str, jnp.ndarray], game_idx: int):
-        """
-        Extract game state compatible with bucketing system.
-        This is a bridge between game_results and GameState format.
-        """
-        # Create a minimal game state for bucketing
-        # This is a simplified version - in practice you'd want the full GameState
-        class MockGameState:
-            def __init__(self):
-                self.hole_cards = game_results['hole_cards'][game_idx]  # [6, 2]
-                self.comm_cards = game_results['final_community'][game_idx]  # [5]
-                self.pot = jnp.array([game_results['final_pot'][game_idx]])
-        
-        return MockGameState()
+# _extract_game_state removed - no longer needed with direct array passing
     
     @partial(jax.jit, static_argnums=(0,))
     def _compute_action_regrets(self, player_payoff: float, game_results: Dict[str, jnp.ndarray],
