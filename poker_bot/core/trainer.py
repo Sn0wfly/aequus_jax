@@ -203,7 +203,7 @@ class PokerTrainer:
         
         return clipped_regrets, updated_strategy
     
-    @jax.jit
+    @partial(jax.jit, static_argnums=(0,))
     def _simulate_games(self, keys: jnp.ndarray) -> tuple[jnp.ndarray, Dict[str, jnp.ndarray]]:
         """
         Simulate batch of poker games.
@@ -218,7 +218,7 @@ class PokerTrainer:
         payoffs, histories, game_results = game_engine.unified_batch_simulation(keys)
         return payoffs, game_results
     
-    @jax.jit
+    @partial(jax.jit, static_argnums=(0,))
     def _update_regrets_for_game(self, regrets: jnp.ndarray, game_payoffs: jnp.ndarray,
                                 game_results: Dict[str, jnp.ndarray], 
                                 game_idx: int) -> jnp.ndarray:
@@ -252,7 +252,7 @@ class PokerTrainer:
         
         return regret_updates
     
-    @jax.jit
+    @partial(jax.jit, static_argnums=(0,))
     def _extract_game_state(self, game_results: Dict[str, jnp.ndarray], game_idx: int):
         """
         Extract game state compatible with bucketing system.
@@ -268,7 +268,7 @@ class PokerTrainer:
         
         return MockGameState()
     
-    @jax.jit
+    @partial(jax.jit, static_argnums=(0,))
     def _compute_action_regrets(self, player_payoff: float, game_results: Dict[str, jnp.ndarray],
                                game_idx: int, player_idx: int) -> jnp.ndarray:
         """
@@ -316,7 +316,7 @@ class PokerTrainer:
         
         return jnp.clip(regrets, -10.0, 10.0)
     
-    @jax.jit
+    @partial(jax.jit, static_argnums=(0,))
     def _evaluate_hand_simple(self, hole_cards: jnp.ndarray) -> jnp.ndarray:
         """
         Simple hand evaluation for regret computation.
@@ -337,7 +337,7 @@ class PokerTrainer:
         
         return rank_value + pair_bonus + suited_bonus
     
-    @jax.jit
+    @partial(jax.jit, static_argnums=(0,))
     def _regret_matching(self, regrets: jnp.ndarray) -> jnp.ndarray:
         """
         Convert regrets to strategy using regret matching.
