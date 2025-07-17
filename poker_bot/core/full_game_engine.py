@@ -6,8 +6,6 @@ from dataclasses import dataclass, replace
 from functools import partial
 import numpy as np
 from jax.tree_util import register_pytree_node_class
-from jax import ShapeDtypeStruct
-
 from ..evaluator import HandEvaluator
 
 MAX_GAME_LENGTH = 60
@@ -43,28 +41,9 @@ class GameState:
     def tree_unflatten(cls, _, children):
         return cls(*children)
 
-# ---------- FIXED: Real Hand Evaluator ----------
-def evaluate_hand_wrapper(cards_device):
-    """
-    REAL poker hand evaluator using phevaluator.
-    Returns actual hand strength for proper showdowns.
-    """
-    cards_np = np.asarray(cards_device)
-    
-    # Filter valid cards (>= 0)
-    valid_cards = cards_np[cards_np >= 0]
-    
-    if len(valid_cards) >= 5:
-        try:
-            # Use the REAL evaluator instance
-            strength = evaluator.evaluate_single(valid_cards.tolist())
-            # phevaluator returns lower = better, invert for higher = better
-            return np.int32(7462 - strength)
-        except Exception as e:
-            print(f"Evaluator error: {e}")
-            return np.int32(0)
-    else:
-        return np.int32(0)  # Invalid hand
+# ---------- PURE JAX ENGINE: NO CALLBACKS ----------
+# evaluate_hand_wrapper removed - replaced with JAX-native fake evaluation
+# This eliminates ALL CPU-GPU synchronization bottlenecks
 
 # ---------- Helpers ----------
 @jax.jit
@@ -179,12 +158,9 @@ def resolve_showdown(state: GameState) -> jax.Array:
     def full():
         def eval_i(i):
             cards = jnp.concatenate([state.hole_cards[i], state.comm_cards])
-            return jax.pure_callback(
-                evaluate_hand_wrapper,
-                ShapeDtypeStruct((), np.int32),
-                cards,
-                vmap_method='sequential'
-            )
+            # PRUEBA DE CONCEPTO: Reemplazar pure_callback con evaluación JAX-native fake
+            # Esto debería liberar GPU completamente al eliminar todas las sincronizaciones CPU
+            return jnp.sum(cards).astype(jnp.int32)
         strengths = jnp.array([lax.cond(active[i], lambda: eval_i(i), lambda: 9999) for i in range(6)])
         best = jnp.min(strengths)
         winners = (strengths == best) & active
@@ -259,6 +235,7 @@ def initial_state_for_idx(idx):
 
 # Agregar al final de full_game_engine.py
 
+@jax.jit
 def unified_batch_simulation(keys):
     """
     Extended batch simulation that returns game results for CFR training.

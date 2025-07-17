@@ -159,10 +159,11 @@ class PokerTrainer:
         
         return stats
     
+    @partial(jax.jit, static_argnums=(0,))
     def _cfr_step(self, regrets: jnp.ndarray, strategy: jnp.ndarray, 
                   key: jax.Array) -> tuple[jnp.ndarray, jnp.ndarray]:
         """
-        Single CFR training step - REFACTORED for CPU/GPU separation.
+        Single CFR training step - PURE JAX/GPU MONOLITHIC (no pure_callback).
         
         Args:
             regrets: Current regret table
@@ -172,79 +173,27 @@ class PokerTrainer:
         Returns:
             Updated (regrets, strategy) tuple
         """
-        # PHASE 1: Generate training batch on CPU (NO JIT - allows pure_callback)
-        batch_data = self._generate_training_batch(key)
-        
-        # PHASE 2: Pure GPU learning step (JIT compiled - no callbacks)
-        updated_regrets, updated_strategy = self._update_step_gpu(
-            regrets, strategy, batch_data
-        )
-        
-        return updated_regrets, updated_strategy
-    
-    def _generate_training_batch(self, key: jax.Array) -> Dict[str, np.ndarray]:
-        """
-        PHASE 1: Generate training batch on CPU (NO JIT).
-        Allows pure_callback to run natively at full CPU speed.
-        
-        Args:
-            key: Random key for batch generation
-            
-        Returns:
-            Dictionary of NumPy arrays ready for GPU transfer
-        """
-        # Generate random keys for batch
+        # Generate random keys for batch simulation
         keys = jax.random.split(key, self.config.batch_size)
         
-        # Run game simulations on CPU (with pure_callback allowed)
+        # Run PURE JAX simulation (no CPU callbacks)
         payoffs, histories, game_results = game_engine.unified_batch_simulation(keys)
         
-        # Convert all JAX arrays to NumPy for clean CPU/GPU separation
-        batch_data = {
-            'payoffs': np.asarray(payoffs),
-            'hole_cards': np.asarray(game_results['hole_cards']),
-            'final_community': np.asarray(game_results['final_community']), 
-            'final_pot': np.asarray(game_results['final_pot']),
-            'player_stacks': np.asarray(game_results['player_stacks']),
-            'player_bets': np.asarray(game_results['player_bets'])
-        }
-        
-        return batch_data
-    
-    @partial(jax.jit, static_argnums=(0,))
-    def _update_step_gpu(self, regrets: jnp.ndarray, strategy: jnp.ndarray,
-                        batch_data: Dict[str, np.ndarray]) -> tuple[jnp.ndarray, jnp.ndarray]:
-        """
-        PHASE 2: Pure GPU learning step (JIT compiled).
-        No pure_callback - only pure JAX math operations.
-        
-        Args:
-            regrets: Current regret table
-            strategy: Current strategy table
-            batch_data: Pre-generated batch data from CPU phase
-            
-        Returns:
-            Updated (regrets, strategy) tuple
-        """
-        # Convert NumPy back to JAX arrays (automatic GPU transfer)
-        payoffs = jnp.asarray(batch_data['payoffs'])
-        hole_cards = jnp.asarray(batch_data['hole_cards'])
-        final_community = jnp.asarray(batch_data['final_community'])
-        final_pot = jnp.asarray(batch_data['final_pot'])
-        
-        # Process each game in the batch using our optimized vectorization
+        # Process each game in the batch using vectorized operations
         def process_game(game_idx):
-            return self._update_regrets_for_game_gpu(
-                regrets, payoffs[game_idx], hole_cards[game_idx],
-                final_community[game_idx], final_pot[game_idx], game_idx
+            return self._update_regrets_for_game_gpu_simple(
+                regrets, payoffs[game_idx], 
+                game_results['hole_cards'][game_idx],
+                game_results['final_community'][game_idx], 
+                game_results['final_pot'][game_idx]
             )
         
-        # Vectorized regret updates (all our optimizations preserved)
+        # Vectorized regret updates 
         batch_regret_updates = jax.vmap(process_game)(
             jnp.arange(self.config.batch_size)
         )
         
-        # Accumulate regrets from all games  
+        # Accumulate regrets from all games
         updated_regrets = regrets + jnp.sum(batch_regret_updates, axis=0)
         
         # Clip regrets to prevent explosion
@@ -260,12 +209,11 @@ class PokerTrainer:
         return clipped_regrets, updated_strategy
     
     @partial(jax.jit, static_argnums=(0,))
-    def _update_regrets_for_game_gpu(self, regrets: jnp.ndarray, game_payoffs: jnp.ndarray,
-                                    hole_cards_batch: jnp.ndarray, community_cards: jnp.ndarray,
-                                    pot_size: jnp.ndarray, game_idx: int) -> jnp.ndarray:
+    def _update_regrets_for_game_gpu_simple(self, regrets: jnp.ndarray, game_payoffs: jnp.ndarray,
+                                           hole_cards_batch: jnp.ndarray, community_cards: jnp.ndarray,
+                                           pot_size: jnp.ndarray) -> jnp.ndarray:
         """
-        GPU-optimized regret update for a single game.
-        Pure JAX implementation - no callbacks.
+        SIMPLIFIED GPU regret update - PURE JAX, no callbacks.
         
         Args:
             regrets: Current regret table
@@ -273,7 +221,6 @@ class PokerTrainer:
             hole_cards_batch: Hole cards for all players [6, 2]
             community_cards: Community cards [5]
             pot_size: Final pot size (scalar)
-            game_idx: Game index (unused, for vmap compatibility)
             
         Returns:
             Regret updates for this game
