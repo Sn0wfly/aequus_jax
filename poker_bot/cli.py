@@ -112,7 +112,7 @@ def train(config: str, iterations: int, save_path: str, validate: bool, resume: 
         # Run training
         if resume:
             click.echo(f"\n🔄 Resuming CFR training...")
-            stats = trainer.resume_training(resume, iterations, save_path)
+            stats = trainer.resume_training(checkpoint, iterations, save_path)
         else:
             click.echo(f"\n🎯 Starting fresh CFR training...")
             stats = trainer.train(iterations, save_path)
