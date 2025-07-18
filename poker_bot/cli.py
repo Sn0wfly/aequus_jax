@@ -45,28 +45,57 @@ def cli():
               help='Base path for saving models')
 @click.option('--validate', is_flag=True,
               help='Run validation before and after training')
-def train(config: str, iterations: int, save_path: str, validate: bool):
+@click.option('--resume',
+              help='Resume training from checkpoint file or directory')
+def train(config: str, iterations: int, save_path: str, validate: bool, resume: str):
     """Train the poker AI using CFR algorithm"""
     
     click.echo(f"🚀 Starting Aequus training session...")
     click.echo(f"Config: {config}")
     click.echo(f"Save path: {save_path}")
+    if resume:
+        click.echo(f"Resume from: {resume}")
     
     try:
         # Create trainer
-        if os.path.exists(config):
-            trainer = create_trainer(config)
-            click.echo(f"✅ Loaded configuration from {config}")
+        if resume:
+            # Resume mode - create trainer from checkpoint
+            if os.path.isfile(resume):
+                # Direct checkpoint file
+                trainer = create_trainer()
+                trainer.load_model(resume)
+                click.echo(f"✅ Resuming from checkpoint: {resume}")
+            elif os.path.isdir(resume):
+                # Directory - find latest checkpoint
+                trainer = create_trainer()
+                checkpoint = trainer.find_latest_checkpoint(resume)
+                if checkpoint:
+                    trainer.load_model(checkpoint)
+                    click.echo(f"✅ Resuming from latest checkpoint: {checkpoint}")
+                else:
+                    raise click.ClickException(f"No checkpoints found in directory: {resume}")
+            else:
+                raise click.ClickException(f"Resume path not found: {resume}")
         else:
-            trainer = create_trainer()
-            click.echo(f"⚠️ Config not found, using defaults")
-        
-        # Override iterations if specified
-        if iterations:
+            # Fresh training mode
+            if os.path.exists(config):
+                trainer = create_trainer(config)
+                click.echo(f"✅ Loaded configuration from {config}")
+            else:
+                trainer = create_trainer()
+                click.echo(f"⚠️ Config not found, using defaults")
+     
+        # Override iterations if specified (only for fresh training)
+        if iterations and not resume:
             click.echo(f"🔧 Overriding iterations: {iterations}")
-        else:
-            iterations = 1000  # Default
-        
+        elif not iterations and not resume:
+            iterations = 1000  # Default for fresh training
+        elif resume:
+            # For resume, iterations is required
+            if not iterations:
+                raise click.ClickException("--iterations is required when using --resume")
+            click.echo(f"🔧 Additional iterations: {iterations}")
+     
         # Pre-training validation
         if validate:
             click.echo(f"\n🔍 Running pre-training validation...")
@@ -76,13 +105,17 @@ def train(config: str, iterations: int, save_path: str, validate: bool):
                 detailed_validation(trainer.strategy)
                 return
             click.echo(f"✅ Pre-training validation passed")
-        
+     
         # Create save directory
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        
+     
         # Run training
-        click.echo(f"\n🎯 Starting CFR training...")
-        stats = trainer.train(iterations, save_path)
+        if resume:
+            click.echo(f"\n🔄 Resuming CFR training...")
+            stats = trainer.resume_training(resume, iterations, save_path)
+        else:
+            click.echo(f"\n🎯 Starting fresh CFR training...")
+            stats = trainer.train(iterations, save_path)
         
         # Post-training validation
         if validate:

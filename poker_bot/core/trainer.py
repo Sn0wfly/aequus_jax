@@ -359,6 +359,84 @@ class PokerTrainer:
         logger.info(f"📂 Model loaded: {path}")
         logger.info(f"   Iteration: {self.iteration}")
 
+    def resume_training(self, checkpoint_path: str, num_iterations: int, save_path: str) -> Dict[str, Any]:
+        """
+        Resume training from a saved checkpoint.
+        
+        Args:
+            checkpoint_path: Path to the checkpoint file to resume from
+            num_iterations: Number of additional iterations to run
+            save_path: Path to save the resumed training
+            
+        Returns:
+            Training statistics including resume information
+        """
+        logger.info(f"🔄 Resuming training from: {checkpoint_path}")
+        logger.info(f"   Additional iterations: {num_iterations}")
+        
+        # Load the checkpoint
+        self.load_model(checkpoint_path)
+        
+        # Continue training from loaded state
+        return self.train(num_iterations, save_path)
+
+    @classmethod
+    def resume_from_checkpoint(cls, checkpoint_path: str) -> 'PokerTrainer':
+        """
+        Create trainer instance from checkpoint for resume.
+        
+        Args:
+            checkpoint_path: Path to checkpoint file
+            
+        Returns:
+            PokerTrainer ready to continue training
+        """
+        trainer = cls.__new__(cls)
+        trainer.load_model(checkpoint_path)
+        return trainer
+
+    @staticmethod
+    def find_latest_checkpoint(checkpoint_dir: str = "checkpoints") -> Optional[str]:
+        """
+        Find the latest checkpoint file in the specified directory.
+        
+        Args:
+            checkpoint_dir: Directory to search for checkpoints
+            
+        Returns:
+            Path to latest checkpoint file or None if no checkpoints found
+        """
+        if not os.path.exists(checkpoint_dir):
+            return None
+            
+        checkpoint_files = [
+            f for f in os.listdir(checkpoint_dir)
+            if f.endswith('.pkl') and 'iter_' in f
+        ]
+        
+        if not checkpoint_files:
+            return None
+            
+        # Sort by iteration number (extract from filename)
+        def extract_iteration(filename):
+            try:
+                return int(filename.split('_iter_')[1].split('.')[0])
+            except (IndexError, ValueError):
+                return 0
+                
+        latest_file = max(checkpoint_files, key=extract_iteration)
+        return os.path.join(checkpoint_dir, latest_file)
+
+    def get_training_state(self) -> Dict[str, Any]:
+        """Get current training state for checkpointing"""
+        return {
+            'regrets': np.asarray(self.regrets),
+            'strategy': np.asarray(self.strategy),
+            'iteration': self.iteration,
+            'config': self.config,
+            'timestamp': time.time()
+        }
+
 # Factory function for easy creation
 def create_trainer(config_path: Optional[str] = None) -> PokerTrainer:
     """
