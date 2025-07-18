@@ -46,11 +46,17 @@ class TrainerConfig:
         with open(yaml_path, 'r') as f:
             config_dict = yaml.safe_load(f)
         
-        # Extract relevant parameters
+        # Extract all relevant parameters from YAML with proper fallbacks
         return cls(
             batch_size=config_dict.get('batch_size', 128),
+            num_actions=config_dict.get('num_actions', 6),
+            max_info_sets=config_dict.get('max_info_sets', 50000),
             learning_rate=config_dict.get('learning_rate', 0.01),
-            # Add other parameters as needed
+            regret_floor=config_dict.get('regret_floor', -100.0),
+            regret_ceiling=config_dict.get('regret_ceiling', 100.0),
+            strategy_threshold=config_dict.get('strategy_threshold', 1e-6),
+            save_interval=config_dict.get('save_interval', 1000),
+            log_interval=config_dict.get('log_interval', 100),
         )
 
 class PokerTrainer:
