@@ -246,8 +246,8 @@ class PokerTrainer:
         # Generate random keys for batch simulation
         keys = jax.random.split(key, self.config.batch_size)
         
-        # Run PURE JAX simulation (no CPU callbacks) with LUT parameters
-        payoffs, histories, game_results = game_engine.unified_batch_simulation(
+        # Use LUT-based simulation when LUT is available, fallback otherwise
+        payoffs, histories, game_results = game_engine.unified_batch_simulation_with_lut(
             keys,
             self.lut_keys,
             self.lut_values,
