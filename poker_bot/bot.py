@@ -124,14 +124,23 @@ class PokerBot:
                 
                 # Get strategy for this info set
                 strategy_probs = self.strategy[info_set_idx]
-                
-                # Choose action with highest probability
-                action_index = np.argmax(strategy_probs)
                 actions = ["FOLD", "CHECK", "CALL", "BET", "RAISE", "ALL_IN"]
                 
-                selected_action = actions[action_index]
+                # Asegurar que las probabilidades sean válidas para el muestreo
+                strategy_probs = np.maximum(strategy_probs, 0)  # Prevenir probabilidades negativas
+                prob_sum = np.sum(strategy_probs)
                 
-                logger.debug(f"Info set {info_set_idx}: {strategy_probs} -> {selected_action}")
+                if prob_sum > 1e-6:  # Usar un umbral pequeño para estabilidad
+                    strategy_probs = strategy_probs / prob_sum
+                else:
+                    # Si la suma es cero (un caso raro), fallback a una estrategia uniforme
+                    num_actions = len(actions)
+                    strategy_probs = np.ones(num_actions) / num_actions
+                
+                # Muestreo Probabilístico de la Acción
+                selected_action = np.random.choice(actions, p=strategy_probs)
+                
+                logger.debug(f"Info set {info_set_idx}: Strategy={np.round(strategy_probs, 2)} -> Sampled Action: {selected_action}")
                 return selected_action
                 
             else:

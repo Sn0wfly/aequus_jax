@@ -157,16 +157,30 @@ def play(model: str, games: int):
         
         # Simple test games
         click.echo(f"\n🎮 Playing {games} test games...")
+
+        import random
         
         for i in range(games):
-            # Create a simple test game state
+            # --- INICIO DEL NUEVO BLOQUE ---
+            # Crear un mazo y barajarlo para cada mano de prueba
+            deck = list(range(52))
+            random.shuffle(deck)
+            
+            # Repartir cartas únicas y aleatorias
+            hole_cards = [deck.pop(), deck.pop()]
+            community_cards = [deck.pop() for _ in range(5)]
+            # Rellenar con -1 si no se reparten todas, es buena práctica
+            community_cards.extend([-1] * (5 - len(community_cards)))
+            
+            # Generar estado de juego aleatorio
             test_state = {
-                'player_id': 0,
-                'hole_cards': [i * 2, i * 2 + 1],  # Different cards each game
-                'community_cards': [10, 11, 12, 13, 14],
-                'pot_size': 50.0,
-                'position': i % 6
+                'player_id': random.randint(0, 5), # También aleatoriza el jugador
+                'hole_cards': hole_cards,
+                'community_cards': community_cards,
+                'pot_size': random.uniform(20.0, 300.0), # Pozo de tamaño variable
+                'position': random.randint(0, 5)
             }
+            # --- FIN DEL NUEVO BLOQUE ---
             
             action = bot.get_action(test_state)
             click.echo(f"   Game {i+1}: Action = {action}")
