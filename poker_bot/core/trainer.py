@@ -284,11 +284,11 @@ class PokerTrainer:
         def compute_regret_vector(strength, payoff):
             return jnp.where(
                 strength > 0.7,
-                payoff * jnp.array([0.0, 0.0, 0.1, 0.5, 0.8, 0.2]) / 100.0,  # Strong: bet/raise
+                payoff * jnp.array([0.0, 0.0, 0.1, 0.5, 0.8, 0.2]),  # Strong: bet/raise
                 jnp.where(
-                    strength > 0.3, 
-                    payoff * jnp.array([0.1, 0.2, 0.3, 0.1, 0.0, 0.0]) / 100.0,  # Medium: mixed
-                    payoff * jnp.array([0.0, 0.3, 0.2, 0.0, 0.0, 0.0]) / 100.0   # Weak: fold/check
+                    strength > 0.3,
+                    payoff * jnp.array([0.1, 0.2, 0.3, 0.1, 0.0, 0.0]),  # Medium: mixed
+                    payoff * jnp.array([0.0, 0.3, 0.2, 0.0, 0.0, 0.0])   # Weak: fold/check
                 )
             )
         
