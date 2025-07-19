@@ -233,20 +233,21 @@ class PokerTrainer:
     def _cfr_step(self, regrets: jnp.ndarray, strategy: jnp.ndarray,
                   key: jax.Array) -> tuple[jnp.ndarray, jnp.ndarray]:
         """
-        Single CFR training step with hybrid CFR+ optimization.
+        RADICAL DEBUGGING SIMPLIFICATION - Ultra-simplified dummy version
+        Runs simulation without any regret calculations to isolate memory issues.
         
         Args:
-            regrets: Current regret table
-            strategy: Current strategy table
+            regrets: Current regret table (returned unchanged)
+            strategy: Current strategy table (returned unchanged)
             key: Random key for game simulation
             
         Returns:
-            Updated (regrets, strategy) tuple with hybrid CFR+ enhancements
+            Original (regrets, strategy) tuple - NO CHANGES MADE
         """
         # Generate random keys for batch simulation
         keys = jax.random.split(key, self.config.batch_size)
         
-        # Use LUT-based simulation when LUT is available, fallback otherwise
+        # Run game simulation only - this is what we want to test for memory issues
         payoffs, histories, game_results = game_engine.unified_batch_simulation_with_lut(
             keys,
             self.lut_keys,
@@ -254,50 +255,14 @@ class PokerTrainer:
             self.lut_table_size
         )
         
-        # Process each game in the batch using vectorized operations
-        def process_game(game_idx):
-            return self._update_regrets_for_game_gpu_simple(
-                regrets, payoffs[game_idx],
-                game_results['hole_cards'][game_idx],
-                game_results['final_community'][game_idx],
-                game_results['final_pot'][game_idx]
-            )
+        # DEBUG: Force computation to complete to ensure simulation runs
+        # This helps us determine if the simulation itself causes OOM
+        _ = payoffs.block_until_ready()
+        _ = histories.block_until_ready()
         
-        # Vectorized regret updates
-        batch_regret_updates = jax.vmap(process_game)(
-            jnp.arange(self.config.batch_size)
-        )
-        
-        # Hybrid CFR+ implementation
-        if self.config.use_regret_discounting:
-            # Apply regret discounting (CFR-γ)
-            regrets_descontados = regrets * self.config.discount_factor
-            accumulated_regrets = regrets_descontados + jnp.sum(batch_regret_updates, axis=0)
-        else:
-            # Standard regret accumulation
-            accumulated_regrets = regrets + jnp.sum(batch_regret_updates, axis=0)
-        
-        # Apply CFR+ pruning if enabled
-        if self.config.use_cfr_plus:
-            updated_regrets = jnp.maximum(accumulated_regrets, 0.0)
-            # CFR+ guarantees non-negative regrets, so floor is 0.0
-            clipped_regrets = jnp.clip(
-                updated_regrets,
-                0.0,
-                self.config.regret_ceiling
-            )
-        else:
-            # Legacy CFR with configurable floor
-            clipped_regrets = jnp.clip(
-                accumulated_regrets,
-                self.config.regret_floor,
-                self.config.regret_ceiling
-            )
-        
-        # Update strategy using regret matching
-        updated_strategy = self._regret_matching(clipped_regrets)
-        
-        return clipped_regrets, updated_strategy
+        # Return original values unchanged - skip all complex regret calculations
+        # This isolates whether the simulation or the regret logic causes memory issues
+        return regrets, strategy
     
     @partial(jax.jit, static_argnums=(0,))
     def _update_regrets_for_game_gpu_simple(self, regrets: jnp.ndarray, game_payoffs: jnp.ndarray,
