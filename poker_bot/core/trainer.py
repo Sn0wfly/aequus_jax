@@ -43,13 +43,13 @@ def load_hand_evaluation_lut(lut_path: Optional[str] = None) -> tuple[jnp.ndarra
         with open(lut_path, 'rb') as f:
             lut_data = pickle.load(f)
         
-        # Validate LUT structure
-        required_keys = ['keys', 'values', 'table_size']
+        # Validate LUT structure - using actual keys from build_lut.py
+        required_keys = ['hash_keys', 'hash_values', 'table_size']
         if not all(key in lut_data for key in required_keys):
             raise ValueError(f"Invalid LUT format: missing required keys {required_keys}")
-        
-        lut_keys = jnp.array(lut_data['keys'], dtype=jnp.int32)
-        lut_values = jnp.array(lut_data['values'], dtype=jnp.int32)
+         
+        lut_keys = jnp.array(lut_data['hash_keys'], dtype=jnp.int32)
+        lut_values = jnp.array(lut_data['hash_values'], dtype=jnp.int32)
         table_size = int(lut_data['table_size'])
         
         logger.info(f"✅ LUT loaded successfully: {len(lut_keys)} entries, table_size={table_size}")
