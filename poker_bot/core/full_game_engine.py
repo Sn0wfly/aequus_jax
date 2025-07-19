@@ -244,8 +244,8 @@ def play_one_game(key, lut_keys, lut_values, table_size):
 
 # ---------- Batch API ----------
 @jax.jit
-def batch_play(keys):
-    return jax.vmap(play_one_game)(keys)
+def batch_play(keys, lut_keys, lut_values, table_size):
+    return jax.vmap(play_one_game, in_axes=(0, None, None, None))(keys, lut_keys, lut_values, table_size)
 
 @jax.jit
 def initial_state_for_idx(idx):
