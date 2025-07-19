@@ -21,24 +21,50 @@ from .bucketing import compute_info_set_id, validate_bucketing_system
 
 logger = logging.getLogger(__name__)
 
-# ---------- LUT Cache and Function ----------
-_LUT_CACHE = {}
-
-@jax.jit
-def load_hand_evaluation_lut():
+# ---------- LUT Loading Utility ----------
+def load_hand_evaluation_lut(lut_path: Optional[str] = None) -> tuple[jnp.ndarray, jnp.ndarray, int]:
     """
     Load hand evaluation lookup table for fast hand strength calculation.
-    This function loads pre-computed hand evaluation data for 7-card poker hands.
     
+    Args:
+        lut_path: Optional path to LUT file. If None, uses default location.
+        
     Returns:
         Tuple of (lut_keys, lut_values, lut_table_size) for hand evaluation
+        
+    Raises:
+        FileNotFoundError: If LUT file is not found
+        ValueError: If LUT file is corrupted or invalid
     """
-    # Implementation would load actual LUT data here
-    # For now, return dummy values for testing
-    lut_keys = jnp.array([0, 1, 2, 3, 4, 5])
-    lut_values = jnp.array([100, 200, 300, 400, 500, 600])
-    lut_table_size = 6
-    return lut_keys, lut_values, lut_table_size
+    if lut_path is None:
+        lut_path = os.path.join("data", "hand_evaluation_lut.pkl")
+    
+    try:
+        with open(lut_path, 'rb') as f:
+            lut_data = pickle.load(f)
+        
+        # Validate LUT structure
+        required_keys = ['keys', 'values', 'table_size']
+        if not all(key in lut_data for key in required_keys):
+            raise ValueError(f"Invalid LUT format: missing required keys {required_keys}")
+        
+        lut_keys = jnp.array(lut_data['keys'], dtype=jnp.int32)
+        lut_values = jnp.array(lut_data['values'], dtype=jnp.int32)
+        table_size = int(lut_data['table_size'])
+        
+        logger.info(f"✅ LUT loaded successfully: {len(lut_keys)} entries, table_size={table_size}")
+        return lut_keys, lut_values, table_size
+        
+    except FileNotFoundError:
+        logger.warning(f"⚠️ LUT file not found at {lut_path}, using fallback evaluation")
+        # Return dummy values for fallback
+        lut_keys = jnp.array([0, 1, 2, 3, 4, 5], dtype=jnp.int32)
+        lut_values = jnp.array([100, 200, 300, 400, 500, 600], dtype=jnp.int32)
+        return lut_keys, lut_values, 6
+        
+    except Exception as e:
+        logger.error(f"❌ Error loading LUT: {e}")
+        raise
 
 @dataclass
 class TrainerConfig:
@@ -95,7 +121,7 @@ class PokerTrainer:
     Combines regret discounting (CFR-γ) with CFR+ pruning for faster convergence.
     """
     
-    def __init__(self, config: TrainerConfig, lut_keys=None, lut_values=None, lut_table_size=None):
+    def __init__(self, config: TrainerConfig, lut_path: Optional[str] = None):
         self.config = config
         self.iteration = 0
         
@@ -109,10 +135,8 @@ class PokerTrainer:
             dtype=jnp.float32
         ) / config.num_actions
         
-        # Store LUT parameters
-        self.lut_keys = lut_keys
-        self.lut_values = lut_values
-        self.lut_table_size = lut_table_size
+        # Load LUT parameters during initialization
+        self.lut_keys, self.lut_values, self.lut_table_size = load_hand_evaluation_lut(lut_path)
         
         # Validate bucketing system on initialization
         if not validate_bucketing_system():
@@ -121,6 +145,7 @@ class PokerTrainer:
         logger.info(f"🎯 PokerTrainer initialized with hybrid CFR+")
         logger.info(f"   Config: {config.batch_size} batch, {config.max_info_sets:,} info sets")
         logger.info(f"   CFR+: {config.use_cfr_plus}, Discount: {config.discount_factor}")
+        logger.info(f"   LUT: {self.lut_table_size} entries loaded")
         logger.info(f"   Shapes: regrets{self.regrets.shape}, strategy{self.strategy.shape}")
 
     def train(self, num_iterations: int, save_path: str) -> Dict[str, Any]:

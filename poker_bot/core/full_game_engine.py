@@ -190,7 +190,7 @@ def play_street(state: GameState, num_cards: int) -> GameState:
     return run_betting_round(state)
 
 # ---------- Showdown ----------
-def resolve_showdown(state: GameState, lut_keys=None, lut_values=None, lut_table_size=None) -> jax.Array:
+def resolve_showdown(state: GameState, lut_keys, lut_values, table_size) -> jax.Array:
     active = state.player_status != 1
     pot_scalar = jnp.squeeze(state.pot)
     
@@ -201,12 +201,8 @@ def resolve_showdown(state: GameState, lut_keys=None, lut_values=None, lut_table
     def full():
         def eval_i(i):
             cards = jnp.concatenate([state.hole_cards[i], state.comm_cards])
-            # JAX-NATIVE HAND EVALUATION: Use LUT parameters if provided
-            if lut_keys is not None and lut_values is not None and lut_table_size is not None:
-                return evaluate_hand_jax_native(cards, lut_keys, lut_values, lut_table_size)
-            else:
-                return jnp.sum(cards).astype(jnp.int32)  # Fallback for testing
-        
+            return evaluate_hand_jax_native(cards, lut_keys, lut_values, table_size)
+         
         strengths = jnp.array([lax.cond(active[i], lambda: eval_i(i), lambda: 9999) for i in range(6)])
         best = jnp.min(strengths)
         winners = (strengths == best) & active
@@ -218,7 +214,7 @@ def resolve_showdown(state: GameState, lut_keys=None, lut_values=None, lut_table
 
 # ---------- Single game ----------
 @jax.jit
-def play_one_game(key):
+def play_one_game(key, lut_keys, lut_values, table_size):
     deck = jax.random.permutation(key, jnp.arange(52, dtype=jnp.int8))
     key, subkey = jax.random.split(key)
     stacks = jnp.full((6,), 1000.0)
@@ -243,7 +239,7 @@ def play_one_game(key):
     state = play_street(state, 3)  # flop
     state = play_street(state, 1)  # turn
     state = play_street(state, 1)  # river
-    payoffs = resolve_showdown(state)
+    payoffs = resolve_showdown(state, lut_keys, lut_values, table_size)
     return payoffs, state.action_hist
 
 # ---------- Batch API ----------
@@ -283,7 +279,7 @@ def initial_state_for_idx(idx):
 # Agregar al final de full_game_engine.py
 
 @jax.jit
-def unified_batch_simulation(keys, lut_keys=None, lut_values=None, lut_table_size=None):
+def unified_batch_simulation_with_lut(keys, lut_keys, lut_values, table_size):
     """
     Extended batch simulation that returns game results for CFR training.
     
@@ -291,13 +287,13 @@ def unified_batch_simulation(keys, lut_keys=None, lut_values=None, lut_table_siz
         keys: Random keys for each game
         lut_keys: LUT hash keys array
         lut_values: LUT hash values array
-        lut_table_size: Size of the LUT table
+        table_size: Size of the LUT table
         
     Returns:
         (payoffs, histories, game_results) tuple
     """
-    # Run the basic batch simulation
-    payoffs, histories = batch_play(keys)
+    # Run the basic batch simulation with LUT
+    payoffs, histories = batch_play(keys, lut_keys, lut_values, table_size)
     
     # Generate mock game results for training
     batch_size = keys.shape[0]  # JAX-compatible shape access
