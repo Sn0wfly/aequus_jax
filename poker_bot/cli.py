@@ -110,12 +110,8 @@ def train(config: str, iterations: int, save_path: str, validate: bool, resume: 
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
      
         # Run training
-        if resume:
-            click.echo(f"\n🔄 Resuming CFR training...")
-            stats = trainer.resume_training(checkpoint, iterations, save_path)
-        else:
-            click.echo(f"\n🎯 Starting fresh CFR training...")
-            stats = trainer.train(iterations, save_path)
+        click.echo(f"\n🎯 Starting CFR training...")
+        stats = trainer.train(iterations, save_path)
         
         # Post-training validation
         if validate:

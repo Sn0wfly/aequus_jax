@@ -19,6 +19,11 @@ regret_floor: -100.0               # Minimum regret value
 regret_ceiling: 100.0              # Maximum regret value
 strategy_threshold: 0.000001       # Minimum strategy probability
 
+# Hybrid CFR+ Settings
+use_cfr_plus: true                 # Activa/desactiva la poda de regrets de CFR+
+use_regret_discounting: true       # Activa/desactiva el descuento de regrets
+discount_factor: 0.9995            # Factor de descuento para los regrets (CFR-γ)
+
 # ==============================================================================
 # GAME CONFIGURATION
 # ==============================================================================

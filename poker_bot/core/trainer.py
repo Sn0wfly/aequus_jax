@@ -1,8 +1,8 @@
 # poker_bot/core/trainer.py
 
 """
-Clean CFR Trainer for Poker AI
-JAX-native implementation focused purely on CFR training logic
+Clean CFR Trainer for Poker AI with Hybrid CFR+ Implementation
+JAX-native implementation combining regret discounting and CFR+ for enhanced performance
 """
 
 import jax
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TrainerConfig:
-    """Clean configuration for CFR training"""
+    """Enhanced configuration for CFR training with hybrid CFR+ support"""
     # Core training parameters
     batch_size: int = 128
     num_actions: int = 6  # FOLD, CHECK, CALL, BET, RAISE, ALL_IN
@@ -31,9 +31,14 @@ class TrainerConfig:
     learning_rate: float = 0.01
     
     # CFR parameters
-    regret_floor: float = -100.0
+    regret_floor: float = -100.0  # Legacy parameter - will be overridden when CFR+ is enabled
     regret_ceiling: float = 100.0
     strategy_threshold: float = 1e-6
+    
+    # Hybrid CFR+ parameters
+    discount_factor: float = 0.9995  # Regret discounting factor (CFR-γ)
+    use_cfr_plus: bool = True        # Enable CFR+ pruning
+    use_regret_discounting: bool = True  # Enable regret discounting
     
     # Training control
     save_interval: int = 1000
@@ -41,28 +46,34 @@ class TrainerConfig:
     
     @classmethod
     def from_yaml(cls, yaml_path: str) -> 'TrainerConfig':
-        """Load configuration from YAML file"""
+        """Load configuration from YAML file with hybrid CFR+ support"""
         import yaml
         with open(yaml_path, 'r') as f:
-            config_dict = yaml.safe_load(f)
+            config_dict = yaml.safe_load(f) or {}
         
-        # Extract all relevant parameters from YAML with proper fallbacks
+        # Create default instance to get fallback values
+        default_config = cls()
+        
+        # Extract all parameters from YAML with proper fallbacks to class defaults
         return cls(
-            batch_size=config_dict.get('batch_size', 128),
-            num_actions=config_dict.get('num_actions', 6),
-            max_info_sets=config_dict.get('max_info_sets', 50000),
-            learning_rate=config_dict.get('learning_rate', 0.01),
-            regret_floor=config_dict.get('regret_floor', -100.0),
-            regret_ceiling=config_dict.get('regret_ceiling', 100.0),
-            strategy_threshold=config_dict.get('strategy_threshold', 1e-6),
-            save_interval=config_dict.get('save_interval', 1000),
-            log_interval=config_dict.get('log_interval', 100),
+            batch_size=config_dict.get('batch_size', default_config.batch_size),
+            num_actions=config_dict.get('num_actions', default_config.num_actions),
+            max_info_sets=config_dict.get('max_info_sets', default_config.max_info_sets),
+            learning_rate=config_dict.get('learning_rate', default_config.learning_rate),
+            regret_floor=config_dict.get('regret_floor', default_config.regret_floor),
+            regret_ceiling=config_dict.get('regret_ceiling', default_config.regret_ceiling),
+            strategy_threshold=config_dict.get('strategy_threshold', default_config.strategy_threshold),
+            save_interval=config_dict.get('save_interval', default_config.save_interval),
+            log_interval=config_dict.get('log_interval', default_config.log_interval),
+            discount_factor=config_dict.get('discount_factor', default_config.discount_factor),
+            use_cfr_plus=config_dict.get('use_cfr_plus', default_config.use_cfr_plus),
+            use_regret_discounting=config_dict.get('use_regret_discounting', default_config.use_regret_discounting),
         )
 
 class PokerTrainer:
     """
-    Clean CFR trainer focused purely on training logic.
-    All debugging, validation, and evaluation moved to separate modules.
+    Enhanced CFR trainer with hybrid CFR+ implementation for superior performance.
+    Combines regret discounting (CFR-γ) with CFR+ pruning for faster convergence.
     """
     
     def __init__(self, config: TrainerConfig):
@@ -83,22 +94,23 @@ class PokerTrainer:
         if not validate_bucketing_system():
             raise RuntimeError("Bucketing system validation failed")
         
-        logger.info(f"🎯 PokerTrainer initialized")
+        logger.info(f"🎯 PokerTrainer initialized with hybrid CFR+")
         logger.info(f"   Config: {config.batch_size} batch, {config.max_info_sets:,} info sets")
+        logger.info(f"   CFR+: {config.use_cfr_plus}, Discount: {config.discount_factor}")
         logger.info(f"   Shapes: regrets{self.regrets.shape}, strategy{self.strategy.shape}")
     
     def train(self, num_iterations: int, save_path: str) -> Dict[str, Any]:
         """
-        Main training loop - clean and focused.
+        Main training loop with hybrid CFR+ optimization.
         
         Args:
             num_iterations: Number of CFR iterations
             save_path: Path to save final model
             
         Returns:
-            Training statistics
+            Training statistics including hybrid CFR+ metrics
         """
-        logger.info(f"🚀 Starting CFR training: {num_iterations:,} iterations")
+        logger.info(f"🚀 Starting hybrid CFR+ training: {num_iterations:,} iterations")
         logger.info(f"   Save path: {save_path}")
         
         key = jax.random.PRNGKey(42)
@@ -109,15 +121,18 @@ class PokerTrainer:
             'iterations_completed': 0,
             'total_time': 0.0,
             'final_regret_sum': 0.0,
-            'final_strategy_entropy': 0.0
+            'final_strategy_entropy': 0.0,
+            'discount_factor_used': self.config.discount_factor,
+            'cfr_plus_enabled': self.config.use_cfr_plus,
+            'regret_discounting_enabled': self.config.use_regret_discounting
         }
         
         try:
-            for i in range(1, num_iterations + 1):
+            for i in range(self.iteration + 1, self.iteration + num_iterations + 1):
                 self.iteration = i
                 iter_key = jax.random.fold_in(key, i)
                 
-                # Single CFR step
+                # Single CFR step with hybrid optimization
                 iter_start = time.time()
                 self.regrets, self.strategy = self._cfr_step(
                     self.regrets, self.strategy, iter_key
@@ -155,12 +170,12 @@ class PokerTrainer:
             final_path = f"{save_path}_final.pkl"
             self.save_model(final_path)
             
-            logger.info(f"✅ Training completed successfully")
+            logger.info(f"✅ Hybrid CFR+ training completed successfully")
             logger.info(f"   Time: {total_time:.1f}s ({stats['iterations_per_second']:.1f} iter/s)")
             logger.info(f"   Final model: {final_path}")
             
         except Exception as e:
-            logger.error(f"❌ Training failed at iteration {self.iteration}: {e}")
+            logger.error(f"❌ Hybrid CFR+ training failed at iteration {self.iteration}: {e}")
             raise
         
         return stats
@@ -169,7 +184,7 @@ class PokerTrainer:
     def _cfr_step(self, regrets: jnp.ndarray, strategy: jnp.ndarray, 
                   key: jax.Array) -> tuple[jnp.ndarray, jnp.ndarray]:
         """
-        Single CFR training step - PURE JAX/GPU MONOLITHIC (no pure_callback).
+        Single CFR training step with hybrid CFR+ optimization.
         
         Args:
             regrets: Current regret table
@@ -177,7 +192,7 @@ class PokerTrainer:
             key: Random key for game simulation
             
         Returns:
-            Updated (regrets, strategy) tuple
+            Updated (regrets, strategy) tuple with hybrid CFR+ enhancements
         """
         # Generate random keys for batch simulation
         keys = jax.random.split(key, self.config.batch_size)
@@ -199,15 +214,31 @@ class PokerTrainer:
             jnp.arange(self.config.batch_size)
         )
         
-        # Accumulate regrets from all games
-        updated_regrets = regrets + jnp.sum(batch_regret_updates, axis=0)
+        # Hybrid CFR+ implementation
+        if self.config.use_regret_discounting:
+            # Apply regret discounting (CFR-γ)
+            regrets_descontados = regrets * self.config.discount_factor
+            accumulated_regrets = regrets_descontados + jnp.sum(batch_regret_updates, axis=0)
+        else:
+            # Standard regret accumulation
+            accumulated_regrets = regrets + jnp.sum(batch_regret_updates, axis=0)
         
-        # Clip regrets to prevent explosion
-        clipped_regrets = jnp.clip(
-            updated_regrets,
-            self.config.regret_floor, 
-            self.config.regret_ceiling
-        )
+        # Apply CFR+ pruning if enabled
+        if self.config.use_cfr_plus:
+            updated_regrets = jnp.maximum(accumulated_regrets, 0.0)
+            # CFR+ guarantees non-negative regrets, so floor is 0.0
+            clipped_regrets = jnp.clip(
+                updated_regrets,
+                0.0,
+                self.config.regret_ceiling
+            )
+        else:
+            # Legacy CFR with configurable floor
+            clipped_regrets = jnp.clip(
+                accumulated_regrets,
+                self.config.regret_floor,
+                self.config.regret_ceiling
+            )
         
         # Update strategy using regret matching
         updated_strategy = self._regret_matching(clipped_regrets)
@@ -267,10 +298,6 @@ class PokerTrainer:
         regret_updates = regret_updates.at[info_set_indices].add(all_action_regrets)
         
         return regret_updates
-    
-    # ===== LEGACY FUNCTIONS REMOVED =====
-    # Old functions (_simulate_games, _update_regrets_for_game, _compute_action_regrets) 
-    # removed in favor of CPU/GPU decoupled architecture
     
     @partial(jax.jit, static_argnums=(0,))
     def _evaluate_hand_simple(self, hole_cards: jnp.ndarray) -> jnp.ndarray:
@@ -371,7 +398,7 @@ class PokerTrainer:
         Returns:
             Training statistics including resume information
         """
-        logger.info(f"🔄 Resuming training from: {checkpoint_path}")
+        logger.info(f"🔄 Resuming hybrid CFR+ training from: {checkpoint_path}")
         logger.info(f"   Additional iterations: {num_iterations}")
         
         # Load the checkpoint
@@ -446,7 +473,7 @@ def create_trainer(config_path: Optional[str] = None) -> PokerTrainer:
         config_path: Path to YAML config file
         
     Returns:
-        Configured PokerTrainer
+        Configured PokerTrainer with hybrid CFR+ support
     """
     if config_path:
         config = TrainerConfig.from_yaml(config_path)
