@@ -257,8 +257,9 @@ class PokerTrainer:
         
         # DEBUG: Force computation to complete to ensure simulation runs
         # This helps us determine if the simulation itself causes OOM
-        _ = payoffs.block_until_ready()
-        _ = histories.block_until_ready()
+        # Note: .block_until_ready() removed to avoid AttributeError during JIT compilation
+        # _ = payoffs.block_until_ready()
+        # _ = histories.block_until_ready()
         
         # Return original values unchanged - skip all complex regret calculations
         # This isolates whether the simulation or the regret logic causes memory issues
