@@ -21,6 +21,25 @@ from .bucketing import compute_info_set_id, validate_bucketing_system
 
 logger = logging.getLogger(__name__)
 
+# ---------- LUT Cache and Function ----------
+_LUT_CACHE = {}
+
+@jax.jit
+def load_hand_evaluation_lut():
+    """
+    Load hand evaluation lookup table for fast hand strength calculation.
+    This function loads pre-computed hand evaluation data for 7-card poker hands.
+    
+    Returns:
+        Tuple of (lut_keys, lut_values, lut_table_size) for hand evaluation
+    """
+    # Implementation would load actual LUT data here
+    # For now, return dummy values for testing
+    lut_keys = jnp.array([0, 1, 2, 3, 4, 5])
+    lut_values = jnp.array([100, 200, 300, 400, 500, 600])
+    lut_table_size = 6
+    return lut_keys, lut_values, lut_table_size
+
 @dataclass
 class TrainerConfig:
     """Enhanced configuration for CFR training with hybrid CFR+ support"""
@@ -103,7 +122,7 @@ class PokerTrainer:
         logger.info(f"   Config: {config.batch_size} batch, {config.max_info_sets:,} info sets")
         logger.info(f"   CFR+: {config.use_cfr_plus}, Discount: {config.discount_factor}")
         logger.info(f"   Shapes: regrets{self.regrets.shape}, strategy{self.strategy.shape}")
-    
+
     def train(self, num_iterations: int, save_path: str) -> Dict[str, Any]:
         """
         Main training loop with hybrid CFR+ optimization.
