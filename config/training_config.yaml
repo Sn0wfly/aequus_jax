@@ -7,14 +7,14 @@
 
 # CFR Training Settings
 num_iterations: 10000              # Total CFR iterations
-batch_size: 1024                    # Games per training batch
+batch_size: 32                     # Games per training batch (reduced for memory)
 learning_rate: 0.01                # CFR learning rate
 save_interval: 1000                # Save checkpoint every N iterations
 log_interval: 100                  # Log progress every N iterations
 
 # Strategy Parameters
 num_actions: 6                     # FOLD, CHECK, CALL, BET, RAISE, ALL_IN
-max_info_sets: 1000000               # Maximum information sets
+max_info_sets: 50000               # Maximum information sets (reduced for memory)
 regret_floor: -100.0               # Minimum regret value
 regret_ceiling: 100.0              # Maximum regret value
 strategy_threshold: 0.000001       # Minimum strategy probability

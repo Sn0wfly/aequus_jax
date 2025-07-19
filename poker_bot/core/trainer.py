@@ -301,78 +301,41 @@ class PokerTrainer:
         community_cards_batch = game_results['final_community']  # [batch_size, 5]
         final_pot_batch = game_results['final_pot']  # [batch_size]
         
-        # Process each game in the batch
-        def process_single_game(game_idx):
-            """Process a single game to compute regret updates"""
-            game_payoffs = payoffs[game_idx]  # [6]
-            game_hole_cards = hole_cards_batch[game_idx]  # [6, 2]
-            game_community = community_cards_batch[game_idx]  # [5]
-            game_pot = final_pot_batch[game_idx]  # scalar
-            
-            # Compute regret updates for all players in this game
-            return self._compute_regret_updates_for_game(
-                game_payoffs, game_hole_cards, game_community, game_pot
-            )
-        
-        # Vectorize over batch dimension
-        batch_regret_updates = jax.vmap(process_single_game)(
-            jnp.arange(self.config.batch_size)
-        )
-        
-        # Sum regret updates across all games in batch
-        total_regret_updates = jnp.sum(batch_regret_updates, axis=0)
-        
-        return total_regret_updates
-    
-    @partial(jax.jit, static_argnums=(0,))
-    def _compute_regret_updates_for_game(self, game_payoffs: jnp.ndarray,
-                                       hole_cards: jnp.ndarray,
-                                       community_cards: jnp.ndarray,
-                                       pot_size: jnp.ndarray) -> jnp.ndarray:
-        """
-        Compute regret updates for a single game across all players.
-        
-        Args:
-            game_payoffs: Player payoffs [6]
-            hole_cards: Hole cards for all players [6, 2]
-            community_cards: Community cards [5]
-            pot_size: Final pot size (scalar)
-            
-        Returns:
-            Regret updates for this game [max_info_sets, num_actions]
-        """
+        # Memory-efficient processing: accumulate updates directly instead of large arrays
         regret_updates = jnp.zeros((self.config.max_info_sets, self.config.num_actions), dtype=jnp.float32)
         
-        # Process all players simultaneously using vectorization
-        def process_player(player_idx):
-            """Process a single player's decision points"""
-            player_hole_cards = hole_cards[player_idx]  # [2]
-            player_payoff = game_payoffs[player_idx]  # scalar
-            
-            # Compute information set ID for this player's situation
-            info_set_id = compute_info_set_id(
-                player_hole_cards, community_cards, player_idx, jnp.array([pot_size])
-            )
-            
-            # Compute counterfactual values for each possible action
-            counterfactual_values = self._compute_counterfactual_values(
-                player_hole_cards, community_cards, player_payoff, pot_size
-            )
-            
-            # Estimate the value of the action actually taken (simplified)
-            # In practice, this would come from the game history
-            chosen_action_value = player_payoff  # Simplified: actual payoff received
-            
-            # Compute regrets: regret[a] = counterfactual_value[a] - chosen_action_value
-            action_regrets = counterfactual_values - chosen_action_value
-            
-            return info_set_id, action_regrets
+        # Process batch efficiently by flattening operations
+        # Instead of vmap over games, vectorize over all player-game combinations
+        batch_size = self.config.batch_size
         
-        # Vectorize over all players
-        info_set_ids, all_action_regrets = jax.vmap(process_player)(jnp.arange(6))
+        # Flatten to process all players from all games at once: [batch_size * 6]
+        all_payoffs = payoffs.reshape(-1)  # [batch_size * 6]
+        all_hole_cards = hole_cards_batch.reshape(batch_size * 6, 2)  # [batch_size * 6, 2]
         
-        # Update regret table using scatter updates
-        regret_updates = regret_updates.at[info_set_ids].add(all_action_regrets)
+        # Expand community cards and pot sizes for all player-game combinations
+        all_community = jnp.repeat(community_cards_batch, 6, axis=0)  # [batch_size * 6, 5]
+        all_pots = jnp.repeat(final_pot_batch, 6)  # [batch_size * 6]
+        all_player_ids = jnp.tile(jnp.arange(6), batch_size)  # [batch_size * 6]
+        
+        # Vectorized computation of info set IDs for all players
+        def compute_info_set_vectorized(hole_cards, community, player_id, pot):
+            return compute_info_set_id(hole_cards, community, player_id, jnp.array([pot]))
+        
+        all_info_sets = jax.vmap(compute_info_set_vectorized)(
+            all_hole_cards, all_community, all_player_ids, all_pots
+        )
+        
+        # Vectorized counterfactual value computation
+        all_cf_values = jax.vmap(self._compute_counterfactual_values)(
+            all_hole_cards, all_community, all_payoffs, all_pots
+        )
+        
+        # Compute regrets: counterfactual - actual payoff (broadcast to all actions)
+        actual_values_broadcast = jnp.expand_dims(all_payoffs, 1)  # [batch_size * 6, 1]
+        all_regrets = all_cf_values - actual_values_broadcast  # [batch_size * 6, num_actions]
+        
+        # Efficiently accumulate regret updates using scatter operations
+        regret_updates = regret_updates.at[all_info_sets].add(all_regrets)
         
         return regret_updates
     
