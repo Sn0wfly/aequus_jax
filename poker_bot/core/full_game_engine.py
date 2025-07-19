@@ -42,79 +42,47 @@ class GameState:
         return cls(*children)
 
 # ---------- JAX-NATIVE HAND EVALUATION WITH LUT ----------
-# Global LUT storage (loaded once at startup)
-_LUT_HASH_KEYS = None
-_LUT_HASH_VALUES = None
-_LUT_TABLE_SIZE = None
-_LUT_LOADED = False
+# LUT parameters are now passed as function arguments instead of global variables
 
-def load_hand_evaluation_lut(lut_path="data/hand_evaluations_hash.pkl"):
-    """
-    Load hand evaluation LUT into global variables for JAX-native evaluation.
-    Should be called once at startup.
-    """
-    global _LUT_HASH_KEYS, _LUT_HASH_VALUES, _LUT_TABLE_SIZE, _LUT_LOADED
-    
-    try:
-        import pickle
-        with open(lut_path, 'rb') as f:
-            lut_data = pickle.load(f)
-        
-        _LUT_HASH_KEYS = jnp.array(lut_data['hash_keys'])
-        _LUT_HASH_VALUES = jnp.array(lut_data['hash_values'])
-        _LUT_TABLE_SIZE = lut_data['table_size']
-        _LUT_LOADED = True
-        
-        print(f"✅ Hand evaluation LUT loaded: {len(_LUT_HASH_KEYS):,} entries")
-        return True
-        
-    except FileNotFoundError:
-        print(f"⚠️  LUT file not found: {lut_path}")
-        print("   Run 'python scripts/build_lut.py' to create it")
-        _LUT_LOADED = False
-        return False
-    except Exception as e:
-        print(f"❌ Error loading LUT: {e}")
-        _LUT_LOADED = False
-        return False
-
-@jax.jit  
-def evaluate_hand_jax_native(cards):
+@jax.jit
+def evaluate_hand_jax_native(cards, lut_keys, lut_values, lut_table_size):
     """
     JAX-native hand evaluation using lookup table.
     Ultra-fast O(1) evaluation with no CPU callbacks.
     
     Args:
         cards: Array of card indices [7], where -1 = invalid card
+        lut_keys: LUT hash keys array
+        lut_values: LUT hash values array
+        lut_table_size: Size of the LUT table
         
     Returns:
         Hand strength (int32, higher = better)
     """
     # JAX-compatible card filtering: sum only valid cards (>= 0)
-    # Use jnp.where instead of boolean indexing
     valid_mask = cards >= 0
     hash_key = jnp.sum(jnp.where(valid_mask, cards, 0))
-    hash_idx = hash_key % _LUT_TABLE_SIZE
+    hash_idx = hash_key % lut_table_size
     
     # Linear probing to find correct entry
     def probe_condition(state):
         idx, found = state
-        return (idx < _LUT_TABLE_SIZE) & (~found)
+        return (idx < lut_table_size) & (~found)
     
     def probe_body(state):
         idx, found = state
-        is_match = _LUT_HASH_KEYS[idx] == hash_key
-        is_empty = _LUT_HASH_KEYS[idx] == -1
+        is_match = lut_keys[idx] == hash_key
+        is_empty = lut_keys[idx] == -1
         found_match = found | is_match
-        next_idx = jnp.where(is_match | is_empty, idx, (idx + 1) % _LUT_TABLE_SIZE)
+        next_idx = jnp.where(is_match | is_empty, idx, (idx + 1) % lut_table_size)
         return (next_idx, found_match)
     
     final_idx, found = lax.while_loop(probe_condition, probe_body, (hash_idx, False))
     
-    # Return strength if found, otherwise default to sum-based heuristic  
+    # Return strength if found, otherwise default to sum-based heuristic
     return jnp.where(
         found,
-        _LUT_HASH_VALUES[final_idx],
+        lut_values[final_idx],
         hash_key.astype(jnp.int32)  # Fallback using valid card sum
     )
 
@@ -222,25 +190,29 @@ def play_street(state: GameState, num_cards: int) -> GameState:
     return run_betting_round(state)
 
 # ---------- Showdown ----------
-def resolve_showdown(state: GameState) -> jax.Array:
+def resolve_showdown(state: GameState, lut_keys=None, lut_values=None, lut_table_size=None) -> jax.Array:
     active = state.player_status != 1
     pot_scalar = jnp.squeeze(state.pot)
+    
     def single():
         winner = jnp.argmax(active)
         return -state.bets.at[winner].add(pot_scalar)
+    
     def full():
         def eval_i(i):
             cards = jnp.concatenate([state.hole_cards[i], state.comm_cards])
-            # JAX-NATIVE HAND EVALUATION: Use LUT if loaded, fallback to sum heuristic
-            if _LUT_LOADED:
-                return evaluate_hand_jax_native(cards)
+            # JAX-NATIVE HAND EVALUATION: Use LUT parameters if provided
+            if lut_keys is not None and lut_values is not None and lut_table_size is not None:
+                return evaluate_hand_jax_native(cards, lut_keys, lut_values, lut_table_size)
             else:
                 return jnp.sum(cards).astype(jnp.int32)  # Fallback for testing
+        
         strengths = jnp.array([lax.cond(active[i], lambda: eval_i(i), lambda: 9999) for i in range(6)])
         best = jnp.min(strengths)
         winners = (strengths == best) & active
         share = pot_scalar / jnp.maximum(1, winners.sum())
         return -state.bets + winners * share
+    
     can_show = (state.comm_cards != -1).sum() >= 5
     return lax.cond(active.sum() <= 1, single, lambda: lax.cond(can_show, full, single))
 
@@ -311,12 +283,15 @@ def initial_state_for_idx(idx):
 # Agregar al final de full_game_engine.py
 
 @jax.jit
-def unified_batch_simulation(keys):
+def unified_batch_simulation(keys, lut_keys=None, lut_values=None, lut_table_size=None):
     """
     Extended batch simulation that returns game results for CFR training.
     
     Args:
         keys: Random keys for each game
+        lut_keys: LUT hash keys array
+        lut_values: LUT hash values array
+        lut_table_size: Size of the LUT table
         
     Returns:
         (payoffs, histories, game_results) tuple
@@ -341,10 +316,10 @@ def unified_batch_simulation(keys):
     player_stacks = jnp.ones((batch_size, 6)) * 100.0
     player_bets = jnp.abs(payoffs)
     
-    # Create game results as final dictionary 
+    # Create game results as final dictionary
     game_results = {
         'hole_cards': hole_cards_batch,
-        'final_community': community_batch, 
+        'final_community': community_batch,
         'final_pot': final_pot,
         'player_stacks': player_stacks,
         'player_bets': player_bets

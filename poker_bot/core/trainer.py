@@ -76,19 +76,24 @@ class PokerTrainer:
     Combines regret discounting (CFR-γ) with CFR+ pruning for faster convergence.
     """
     
-    def __init__(self, config: TrainerConfig):
+    def __init__(self, config: TrainerConfig, lut_keys=None, lut_values=None, lut_table_size=None):
         self.config = config
         self.iteration = 0
         
         # Initialize regrets and strategy
         self.regrets = jnp.zeros(
-            (config.max_info_sets, config.num_actions), 
+            (config.max_info_sets, config.num_actions),
             dtype=jnp.float32
         )
         self.strategy = jnp.ones(
-            (config.max_info_sets, config.num_actions), 
+            (config.max_info_sets, config.num_actions),
             dtype=jnp.float32
         ) / config.num_actions
+        
+        # Store LUT parameters
+        self.lut_keys = lut_keys
+        self.lut_values = lut_values
+        self.lut_table_size = lut_table_size
         
         # Validate bucketing system on initialization
         if not validate_bucketing_system():
@@ -181,14 +186,14 @@ class PokerTrainer:
         return stats
     
     @partial(jax.jit, static_argnums=(0,))
-    def _cfr_step(self, regrets: jnp.ndarray, strategy: jnp.ndarray, 
+    def _cfr_step(self, regrets: jnp.ndarray, strategy: jnp.ndarray,
                   key: jax.Array) -> tuple[jnp.ndarray, jnp.ndarray]:
         """
         Single CFR training step with hybrid CFR+ optimization.
         
         Args:
             regrets: Current regret table
-            strategy: Current strategy table  
+            strategy: Current strategy table
             key: Random key for game simulation
             
         Returns:
@@ -197,19 +202,24 @@ class PokerTrainer:
         # Generate random keys for batch simulation
         keys = jax.random.split(key, self.config.batch_size)
         
-        # Run PURE JAX simulation (no CPU callbacks)
-        payoffs, histories, game_results = game_engine.unified_batch_simulation(keys)
+        # Run PURE JAX simulation (no CPU callbacks) with LUT parameters
+        payoffs, histories, game_results = game_engine.unified_batch_simulation(
+            keys,
+            self.lut_keys,
+            self.lut_values,
+            self.lut_table_size
+        )
         
         # Process each game in the batch using vectorized operations
         def process_game(game_idx):
             return self._update_regrets_for_game_gpu_simple(
-                regrets, payoffs[game_idx], 
+                regrets, payoffs[game_idx],
                 game_results['hole_cards'][game_idx],
-                game_results['final_community'][game_idx], 
+                game_results['final_community'][game_idx],
                 game_results['final_pot'][game_idx]
             )
         
-        # Vectorized regret updates 
+        # Vectorized regret updates
         batch_regret_updates = jax.vmap(process_game)(
             jnp.arange(self.config.batch_size)
         )
