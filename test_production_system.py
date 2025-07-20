@@ -5,7 +5,7 @@ Production System Test: Complete CFR+ Poker Training with Real Game Engine
 This test validates the entire production-ready system:
 - Real poker engine with LUT-based hand evaluation
 - CFR+ algorithm with regret discounting
-- Realistic game simulation and payoffs
+- Realistic game simulation and payoffs.
 - Production performance benchmarks
 """
 
