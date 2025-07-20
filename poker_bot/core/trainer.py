@@ -96,7 +96,8 @@ def _update_regrets_for_game_pure(
     num_actions: int
 ) -> jnp.ndarray:
     """
-    Función pura para la actualización de regrets usando resultados reales del motor de juego.
+    DEBUG VERSION: Función pura para la actualización de regrets con logging.
+    ⚠️  CRITICAL: This is NOT real CFR - it uses hardcoded heuristic patterns!
     
     Args:
         regrets: Tabla de regrets actual
@@ -108,6 +109,12 @@ def _update_regrets_for_game_pure(
         Regret updates para este juego
     """
     regret_updates = jnp.zeros_like(regrets)
+    
+    # DEBUG: Log input data
+    jax.debug.print("🔍 DEBUG _update_regrets_for_game_pure:")
+    jax.debug.print("  game_payoffs shape/values: {}, {}", game_payoffs.shape, game_payoffs)
+    jax.debug.print("  game_payoffs magnitude: min={}, max={}, sum={}",
+                    jnp.min(game_payoffs), jnp.max(game_payoffs), jnp.sum(game_payoffs))
     
     # Extraer datos del juego real
     hole_cards_batch = game_results['hole_cards']  # [6, 2]
@@ -130,11 +137,16 @@ def _update_regrets_for_game_pure(
     hand_strengths = jax.vmap(_evaluate_hand_simple_pure)(hole_cards_batch)
     normalized_strengths = hand_strengths / 10000.0
     
+    # DEBUG: Log hand evaluation
+    jax.debug.print("  hand_strengths: {}", hand_strengths)
+    jax.debug.print("  normalized_strengths: {}", normalized_strengths)
+    
     # Paso 3: Computación vectorizada de regrets usando payoffs reales - DINÁMICO
     def compute_regret_vector(strength, payoff):
-        # Crear arrays de regret dinámicamente basados en num_actions
+        # ⚠️  CRITICAL: This is NOT real CFR - just hardcoded heuristic patterns!
+        # Real CFR should compute: regret = counterfactual_value - actual_value
         if num_actions == 3:  # FOLD, CALL, BET
-            return jnp.where(
+            pattern = jnp.where(
                 strength > 0.7,
                 payoff * jnp.array([0.0, 0.1, 0.8]),  # Fuerte: bet
                 jnp.where(
@@ -143,8 +155,10 @@ def _update_regrets_for_game_pure(
                     payoff * jnp.array([0.0, 0.3, 0.0])   # Débil: call
                 )
             )
+            jax.debug.print("    3-action pattern for strength={}, payoff={}: {}", strength, payoff, pattern)
+            return pattern
         else:  # num_actions == 6: FOLD, CHECK, CALL, BET, RAISE, ALL_IN
-            return jnp.where(
+            pattern = jnp.where(
                 strength > 0.7,
                 payoff * jnp.array([0.0, 0.0, 0.1, 0.5, 0.8, 0.2]),  # Fuerte: bet/raise
                 jnp.where(
@@ -153,11 +167,23 @@ def _update_regrets_for_game_pure(
                     payoff * jnp.array([0.0, 0.3, 0.2, 0.0, 0.0, 0.0])   # Débil: fold/check
                 )
             )
+            jax.debug.print("    6-action pattern for strength={}, payoff={}: {}", strength, payoff, pattern)
+            return pattern
     
     all_action_regrets = jax.vmap(compute_regret_vector)(normalized_strengths, game_payoffs)
     
+    # DEBUG: Log regret computation results
+    jax.debug.print("  all_action_regrets shape: {}", all_action_regrets.shape)
+    jax.debug.print("  all_action_regrets values: {}", all_action_regrets)
+    jax.debug.print("  info_set_indices: {}", info_set_indices)
+    
     # Paso 4: FULLY VECTORIZED scatter updates - SIN LOOPS!
+    # ⚠️  CRITICAL BUG: This scatter update logic may be broken due to indexing mismatch
     regret_updates = regret_updates.at[info_set_indices].add(all_action_regrets)
+    
+    # DEBUG: Log final result
+    jax.debug.print("  regret_updates magnitude: min={}, max={}, sum={}",
+                    jnp.min(regret_updates), jnp.max(regret_updates), jnp.sum(jnp.abs(regret_updates)))
     
     return regret_updates
 
@@ -185,6 +211,14 @@ def _cfr_step_pure(
         keys, lut_keys, lut_values, lut_table_size
     )
     
+    # DEBUG: Log game engine outputs
+    jax.debug.print("🎮 DEBUG _cfr_step_pure - Game Engine Outputs:")
+    jax.debug.print("  payoffs shape: {}, sample values: {}", payoffs.shape, payoffs[0])
+    jax.debug.print("  payoffs magnitude: min={}, max={}, mean={}",
+                    jnp.min(payoffs), jnp.max(payoffs), jnp.mean(payoffs))
+    jax.debug.print("  game_results keys: hole_cards, final_community, final_pot, player_stacks, player_bets")
+    jax.debug.print("  sample final_pot: {}", game_results_batch['final_pot'][0])
+    
     # ARREGLO 2: Procesar TODOS los juegos del batch usando jax.vmap() para máximo rendimiento
     # En lugar de desperdiciar 99.2% del batch, procesamos todos los juegos en paralelo
     
@@ -198,6 +232,11 @@ def _cfr_step_pure(
             'player_stacks': game_results_batch['player_stacks'][game_idx],  # [6]
             'player_bets': game_results_batch['player_bets'][game_idx]  # [6]
         }
+        
+        # DEBUG: Log first game detailed processing
+        jax.debug.print("📊 Processing game {}: payoffs={}, pot={}",
+                        game_idx, game_payoffs_single, game_results_single['final_pot'])
+        
         return _update_regrets_for_game_pure(
             regrets, game_results_single, game_payoffs_single, config.num_actions
         )
@@ -206,8 +245,21 @@ def _cfr_step_pure(
     batch_indices = jnp.arange(config.batch_size)
     batch_regret_updates = jax.vmap(process_single_game)(batch_indices)
     
+    # DEBUG: Log batch processing results
+    jax.debug.print("📈 Batch Processing Results:")
+    jax.debug.print("  batch_regret_updates shape: {}", batch_regret_updates.shape)
+    jax.debug.print("  batch_regret_updates magnitude per game: min={}, max={}, mean={}",
+                    jnp.min(batch_regret_updates, axis=(1,2)),
+                    jnp.max(batch_regret_updates, axis=(1,2)),
+                    jnp.mean(batch_regret_updates, axis=(1,2)))
+    
     # Promediar las actualizaciones de regret de todos los juegos del batch
     regret_updates = jnp.mean(batch_regret_updates, axis=0)
+    
+    # DEBUG: Log final aggregated result
+    jax.debug.print("🎯 Final Aggregation:")
+    jax.debug.print("  regret_updates magnitude: min={}, max={}, sum={}",
+                    jnp.min(regret_updates), jnp.max(regret_updates), jnp.sum(jnp.abs(regret_updates)))
     
     # Aplicar descuento de regrets si está habilitado
     discounted_regrets = jnp.where(
