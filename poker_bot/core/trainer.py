@@ -139,25 +139,26 @@ def _compute_real_cfr_regrets(
     pot_value = jnp.squeeze(pot_size)
     player_payoff = game_payoffs[player_idx]
     
-    # NORMALIZE pot_value to prevent explosion (max pot = 1000)
-    normalized_pot = jnp.clip(pot_value / 1000.0, 0.1, 10.0)
+    # MUCH MORE CONSERVATIVE NORMALIZATION
+    # Use a very small scale to prevent explosion
+    scale_factor = 0.01  # Very small scale
     
-    # Define action values based on hand strength and pot odds (NORMALIZED)
+    # Define action values based on hand strength (CONSERVATIVE SCALE)
     if num_actions == 9:  # Full 9-action NLHE system
         # Action values: [FOLD, CHECK, CALL, BET_SMALL, BET_MED, BET_LARGE, RAISE_SMALL, RAISE_MED, ALL_IN]
         action_values = jnp.where(
             normalized_strength > 0.8,  # Very strong hands
-            jnp.array([-0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 0.7, 0.9, 1.0]) * normalized_pot,
+            jnp.array([-0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 0.7, 0.9, 1.0]) * scale_factor,
             jnp.where(
                 normalized_strength > 0.6,  # Strong hands
-                jnp.array([-0.2, 0.1, 0.2, 0.3, 0.4, 0.5, 0.4, 0.6, 0.7]) * normalized_pot,
+                jnp.array([-0.2, 0.1, 0.2, 0.3, 0.4, 0.5, 0.4, 0.6, 0.7]) * scale_factor,
                 jnp.where(
                     normalized_strength > 0.4,  # Medium hands
-                    jnp.array([-0.3, 0.0, 0.1, 0.2, 0.3, 0.4, 0.2, 0.3, 0.5]) * normalized_pot,
+                    jnp.array([-0.3, 0.0, 0.1, 0.2, 0.3, 0.4, 0.2, 0.3, 0.5]) * scale_factor,
                     jnp.where(
                         normalized_strength > 0.2,  # Weak hands
-                        jnp.array([-0.4, 0.0, 0.0, 0.1, 0.2, 0.3, 0.1, 0.2, 0.3]) * normalized_pot,
-                        jnp.array([-0.5, 0.0, 0.0, 0.0, 0.1, 0.2, 0.0, 0.1, 0.2]) * normalized_pot  # Very weak hands
+                        jnp.array([-0.4, 0.0, 0.0, 0.1, 0.2, 0.3, 0.1, 0.2, 0.3]) * scale_factor,
+                        jnp.array([-0.5, 0.0, 0.0, 0.0, 0.1, 0.2, 0.0, 0.1, 0.2]) * scale_factor  # Very weak hands
                     )
                 )
             )
@@ -166,27 +167,27 @@ def _compute_real_cfr_regrets(
         # Action values: [FOLD, CHECK, CALL, BET, RAISE, ALL_IN]
         action_values = jnp.where(
             normalized_strength > 0.7,
-            jnp.array([-0.1, 0.2, 0.3, 0.5, 0.7, 0.8]) * normalized_pot,
+            jnp.array([-0.1, 0.2, 0.3, 0.5, 0.7, 0.8]) * scale_factor,
             jnp.where(
                 normalized_strength > 0.4,
-                jnp.array([-0.2, 0.1, 0.2, 0.3, 0.4, 0.5]) * normalized_pot,
-                jnp.array([-0.3, 0.0, 0.1, 0.2, 0.3, 0.4]) * normalized_pot
+                jnp.array([-0.2, 0.1, 0.2, 0.3, 0.4, 0.5]) * scale_factor,
+                jnp.array([-0.3, 0.0, 0.1, 0.2, 0.3, 0.4]) * scale_factor
             )
         )
     else:  # 3-action system
         # Action values: [FOLD, CALL, BET]
         action_values = jnp.where(
             normalized_strength > 0.6,
-            jnp.array([-0.2, 0.3, 0.6]) * normalized_pot,
+            jnp.array([-0.2, 0.3, 0.6]) * scale_factor,
             jnp.where(
                 normalized_strength > 0.3,
-                jnp.array([-0.3, 0.1, 0.3]) * normalized_pot,
-                jnp.array([-0.4, 0.0, 0.2]) * normalized_pot
+                jnp.array([-0.3, 0.1, 0.3]) * scale_factor,
+                jnp.array([-0.4, 0.0, 0.2]) * scale_factor
             )
         )
     
-    # CLIP action values to prevent explosion
-    action_values = jnp.clip(action_values, -10.0, 10.0)
+    # VERY CONSERVATIVE CLIPPING
+    action_values = jnp.clip(action_values, -0.1, 0.1)
     
     # Compute actual value (weighted average of action values by current strategy)
     actual_value = jnp.sum(action_values * current_strategy)
@@ -194,8 +195,8 @@ def _compute_real_cfr_regrets(
     # Compute regrets: counterfactual_value - actual_value
     regrets = action_values - actual_value
     
-    # CLIP regrets to prevent explosion
-    regrets = jnp.clip(regrets, -5.0, 5.0)
+    # VERY CONSERVATIVE CLIPPING
+    regrets = jnp.clip(regrets, -0.05, 0.05)
     
     return regrets
 

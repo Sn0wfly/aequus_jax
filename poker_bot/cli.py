@@ -124,10 +124,11 @@ def train(config: str, iterations: int, save_path: str, validate: bool, resume: 
         
         # Display final statistics
         click.echo(f"\n📊 Training Statistics:")
-        click.echo(f"   Iterations: {stats['iterations_completed']:,}")
-        click.echo(f"   Time: {stats['total_time']:.1f}s")
-        click.echo(f"   Speed: {stats['iterations_per_second']:.1f} iter/s")
-        click.echo(f"   Final entropy: {stats['final_strategy_entropy']:.3f}")
+        click.echo(f"   Iterations: {len(stats['iterations']):,}")
+        click.echo(f"   Time: {sum(stats['training_times']):.1f}s")
+        click.echo(f"   Speed: {len(stats['iterations'])/sum(stats['training_times']):.1f} iter/s")
+        click.echo(f"   Final entropy: {stats['strategy_entropies'][-1]:.3f}")
+        click.echo(f"   Final regret magnitude: {stats['regret_magnitudes'][-1]:.4f}")
         
     except Exception as e:
         click.echo(f"❌ Training failed: {e}")
