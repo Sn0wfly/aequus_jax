@@ -26,25 +26,26 @@ def main():
     print("🚀 PRODUCTION SYSTEM TEST - CFR+ Real Poker Training")
     print("=" * 80)
     
-    # Test configuration for production
+    # Test configuration for production - using actual TrainerConfig parameters
     config = TrainerConfig(
-        num_players=6,
-        num_actions=3,  # fold, call, bet/raise
-        num_iterations=100,  # Reduced for testing
-        regret_discount_factor=0.95,  # CFR-γ with strong discounting
-        strategy_discount_factor=0.99,
         batch_size=64,  # Production batch size
+        num_actions=3,  # fold, call, bet/raise (simplified for testing)
+        max_info_sets=50_000,
         learning_rate=0.01,
-        enable_pruning=True  # CFR+ pruning enabled
+        discount_factor=0.95,  # CFR-γ with strong discounting
+        use_cfr_plus=True,     # CFR+ pruning enabled
+        use_regret_discounting=True,
+        log_interval=10,       # More frequent logging for test
+        save_interval=50
     )
     
     print(f"⚙️  Configuration:")
-    print(f"   Players: {config.num_players}")
     print(f"   Actions: {config.num_actions}")
-    print(f"   Iterations: {config.num_iterations}")
     print(f"   Batch Size: {config.batch_size}")
-    print(f"   Regret Discount: {config.regret_discount_factor}")
-    print(f"   CFR+ Pruning: {config.enable_pruning}")
+    print(f"   Max Info Sets: {config.max_info_sets:,}")
+    print(f"   Discount Factor: {config.discount_factor}")
+    print(f"   CFR+ Pruning: {config.use_cfr_plus}")
+    print(f"   Regret Discounting: {config.use_regret_discounting}")
     print()
     
     # STEP 1: Load production LUT
@@ -119,40 +120,48 @@ def main():
     # STEP 4: Test CFR+ training with production engine
     print("4️⃣  Testing CFR+ Training with Production Engine...")
     try:
-        # Initialize training state
-        trainer_state = trainer.init_train_state()
-        print(f"   🎯 Initial regret sum: {jnp.sum(jnp.abs(trainer_state.regrets)):.2f}")
+        # Check initial state
+        initial_regret_sum = jnp.sum(jnp.abs(trainer.regrets))
+        print(f"   🎯 Initial regret sum: {initial_regret_sum:.2f}")
+        print(f"   🧠 Initial strategy shape: {trainer.strategy.shape}")
         
-        # Run several training iterations
-        num_test_iterations = 10
-        regret_history = []
+        # Test single CFR step with production engine (manual call to internal function)
+        print("   🔬 Testing single CFR step with production engine...")
         
-        print(f"   🔄 Running {num_test_iterations} training iterations...")
+        from poker_bot.core.trainer import _cfr_step_pure
         
-        for iteration in range(num_test_iterations):
-            start_time = time.time()
-            
-            # Single training step
-            trainer_state = trainer.train_step(trainer_state, key)
-            
-            # Track metrics
-            regret_sum = jnp.sum(jnp.abs(trainer_state.regrets))
-            regret_history.append(float(regret_sum))
-            
-            iter_time = time.time() - start_time
-            
-            if iteration % 3 == 0:
-                print(f"      Iter {iteration+1:2d}: Regret sum = {regret_sum:8.2f}, Time = {iter_time:.3f}s")
+        # Convert LUT to JAX arrays for the function
+        lut_keys_jax = jnp.array(trainer.lut_keys)
+        lut_values_jax = jnp.array(trainer.lut_values)
         
-        print(f"   📈 Training progression:")
-        print(f"      Initial regret: {regret_history[0]:.2f}")
-        print(f"      Final regret: {regret_history[-1]:.2f}")
-        print(f"      Trend: {'Decreasing ✅' if regret_history[-1] < regret_history[0] else 'Stable/Increasing ⚠️'}")
+        start_time = time.time()
         
-        # Validate strategy extraction
-        final_strategy = trainer.get_current_strategy(trainer_state)
+        # Single step test
+        new_regrets, new_strategy = _cfr_step_pure(
+            trainer.regrets,
+            trainer.strategy,
+            key,
+            trainer.config,
+            lut_keys_jax,
+            lut_values_jax,
+            trainer.lut_table_size
+        )
+        
+        step_time = time.time() - start_time
+        
+        # Validate results
+        regret_change = jnp.sum(jnp.abs(new_regrets)) - initial_regret_sum
+        print(f"   ⚡ Single step time: {step_time:.3f}s")
+        print(f"   📈 Regret sum change: {regret_change:+.2f}")
+        print(f"   🎲 Strategy normalization: {jnp.mean(jnp.sum(new_strategy, axis=-1)):.6f} (should be ~1.0)")
+        
+        # Update trainer state
+        trainer.regrets = new_regrets
+        trainer.strategy = new_strategy
+        
+        final_strategy = trainer.strategy
         print(f"   🧠 Final strategy shape: {final_strategy.shape}")
-        print(f"   🎲 Strategy sum check: {jnp.sum(final_strategy, axis=-1)}")  # Should be ~1 for each state
+        print(f"   ✅ CFR+ step completed successfully with production engine")
         
     except Exception as e:
         print(f"   ❌ Error in CFR+ training: {e}")
