@@ -88,12 +88,13 @@ def accumulate_regrets_fixed(
     # Use a simpler approach: manually accumulate regrets
     def accumulate_single_regret(carry, data):
         regrets, (idx, regret_update) = carry, data
-        return regrets.at[idx].add(regret_update), None
+        new_regrets = regrets.at[idx].add(regret_update)
+        return new_regrets, None
     
     # Process each sampled info set
     final_regrets, _ = jax.lax.scan(
         accumulate_single_regret,
-        (regrets, None),
+        regrets,  # Initial carry state
         (masked_indices, masked_regrets)
     )
     
@@ -134,12 +135,13 @@ def update_strategy(
     # Use a simpler approach: manually update strategy
     def update_single_strategy(carry, data):
         strategy, (idx, strategy_update) = carry, data
-        return strategy.at[idx].set(strategy_update), None
+        new_strategy = strategy.at[idx].set(strategy_update)
+        return new_strategy, None
     
     # Process each sampled info set
     final_strategy, _ = jax.lax.scan(
         update_single_strategy,
-        (strategy, None),
+        strategy,  # Initial carry state
         (masked_indices, masked_strategy)
     )
     
