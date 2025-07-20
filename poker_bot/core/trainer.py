@@ -28,7 +28,7 @@ class TrainerConfig:
     # Core training parameters
     batch_size: int = 128
     num_actions: int = 9  # FOLD, CHECK, CALL, BET_SMALL, BET_MED, BET_LARGE, RAISE_SMALL, RAISE_MED, ALL_IN
-    max_info_sets: int = 50_000
+    max_info_sets: int = 1_000_000  # Increased from 50,000 to handle large indices
     learning_rate: float = 0.01
     
     # CFR parameters
