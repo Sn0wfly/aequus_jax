@@ -85,11 +85,18 @@ def accumulate_regrets_fixed(
         jnp.zeros_like(action_regrets)
     )
     
-    # Use jax.lax.scatter_add with proper dtype handling
+    # Use jax.lax.scatter_add with proper parameters
+    dimension_numbers = jax.lax.ScatterDimensionNumbers(
+        update_window_dims=(1,),
+        inserted_window_dims=(0,),
+        scatter_dims_to_operand_dims=(0,)
+    )
+    
     updated_regrets = jax.lax.scatter_add(
         regrets,
         masked_indices,
         masked_regrets,
+        dimension_numbers,
         indices_are_sorted=False,
         unique_indices=False
     )
@@ -128,10 +135,17 @@ def update_strategy(
         jnp.zeros_like(action_values)
     )
     
+    dimension_numbers = jax.lax.ScatterDimensionNumbers(
+        update_window_dims=(1,),
+        inserted_window_dims=(0,),
+        scatter_dims_to_operand_dims=(0,)
+    )
+    
     updated_strategy = jax.lax.scatter_add(
         strategy,
         masked_indices,
         masked_strategy,
+        dimension_numbers,
         indices_are_sorted=False,
         unique_indices=False
     )

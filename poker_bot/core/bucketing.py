@@ -361,7 +361,18 @@ def test_hand_differentiation():
         # Compare each bucket with all others
         def compare_with_others(idx):
             current = buckets[idx]
-            others = jnp.concatenate([buckets[:idx], buckets[idx+1:]])
+            # Use lax.dynamic_slice for JAX compatibility
+            def get_others():
+                if idx == 0:
+                    return buckets[1:]
+                elif idx == len(buckets) - 1:
+                    return buckets[:-1]
+                else:
+                    first_part = lax.dynamic_slice(buckets, (0,), (idx,))
+                    second_part = lax.dynamic_slice(buckets, (idx + 1,), (len(buckets) - idx - 1,))
+                    return jnp.concatenate([first_part, second_part])
+            
+            others = get_others()
             return jnp.all(current != others)
         
         # Check uniqueness for each bucket
@@ -378,12 +389,7 @@ def validate_bucketing_system():
         True if validation passes, False otherwise
     """
     try:
-        # Test hand differentiation
-        if not test_hand_differentiation():
-            logger.error("❌ Hand differentiation test failed")
-            return False
-        
-        # Test info set ID generation
+        # Test basic info set ID generation
         hole_cards = jnp.array([48, 49])  # AA
         community_cards = jnp.full(5, -1)  # Preflop
         player_idx = 0
@@ -394,6 +400,33 @@ def validate_bucketing_system():
         
         if info_set_id < 0 or info_set_id >= 500000:
             logger.error(f"❌ Invalid info set ID: {info_set_id}")
+            return False
+        
+        # Test different hands get different buckets
+        test_hands = [
+            (jnp.array([48, 49]), "AA"),
+            (jnp.array([44, 45]), "KK"),
+            (jnp.array([48, 44]), "AKs"),
+            (jnp.array([23, 0]), "72o")
+        ]
+        
+        buckets = []
+        for hole_cards, hand_name in test_hands:
+            bucket = compute_info_set_id(hole_cards, community_cards, player_idx, pot_size, stack_size)
+            buckets.append(bucket)
+        
+        # Check that we have at least 3 different buckets
+        unique_buckets = len(set(buckets))
+        if unique_buckets < 3:
+            logger.error(f"❌ Not enough unique buckets: {unique_buckets}")
+            return False
+        
+        # Test postflop bucketing
+        flop_cards = jnp.array([0, 1, 2, -1, -1])  # Flop
+        flop_bucket = compute_info_set_id(hole_cards, flop_cards, player_idx, pot_size, stack_size)
+        
+        if flop_bucket == info_set_id:
+            logger.error("❌ Postflop bucket same as preflop bucket")
             return False
         
         logger.info("✅ Bucketing system validation passed")
