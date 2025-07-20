@@ -119,7 +119,7 @@ class PokerAIValidator:
                 # Use hand directly with compute_info_set_id
                 bucket_id = compute_info_set_id(hand, mock_community, 0)
                 
-                if bucket_id < 0 or bucket_id >= 50000:
+                if bucket_id < 0 or bucket_id >= 1000000:  # Updated to match max_info_sets
                     logger.error(f"❌ Invalid bucket ID: {bucket_id}")
                     return False
             

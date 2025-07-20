@@ -77,8 +77,8 @@ def compute_info_set_id(hole_cards: jnp.ndarray, community_cards: jnp.ndarray,
         action_bucket                # 9 * 1 = 9
     )
     
-    # Ensure within valid range (max 500,000 info sets)
-    return jnp.mod(info_set_id, 500000).astype(jnp.int32)
+    # Ensure within valid range (max 1,000,000 info sets)
+    return jnp.mod(info_set_id, 1000000).astype(jnp.int32)
 
 @jax.jit
 def _compute_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
@@ -380,7 +380,7 @@ def validate_bucketing_system():
         
         info_set_id = compute_info_set_id(hole_cards, community_cards, player_idx, pot_size, stack_size)
         
-        if info_set_id < 0 or info_set_id >= 500000:
+        if info_set_id < 0 or info_set_id >= 1000000:  # Updated to match max_info_sets
             logger.error(f"❌ Invalid info set ID: {info_set_id}")
             return False
         
