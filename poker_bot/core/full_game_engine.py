@@ -395,12 +395,25 @@ def apply_action_3(state, action):
 
 def step(state, action, num_actions=9):
     """Apply action with configurable action space."""
-    if num_actions == 9:
+    def apply_9_action():
         return apply_action_9(state, action)
-    elif num_actions == 6:
+    
+    def apply_6_action():
         return apply_action_6(state, action)
-    else:  # num_actions == 3
+    
+    def apply_3_action():
         return apply_action_3(state, action)
+    
+    # Use lax.cond instead of if statements for JAX compatibility
+    return lax.cond(
+        num_actions == 9,
+        apply_9_action,
+        lambda: lax.cond(
+            num_actions == 6,
+            apply_6_action,
+            apply_3_action
+        )
+    )
 
 # ---------- Betting round ----------
 def _betting_body_9(state):
@@ -441,12 +454,25 @@ def run_betting_round(init_state, num_actions=9):
     """Run betting round with configurable action space."""
     cond = lambda s: ~is_betting_done(s.player_status, s.bets, s.acted_this_round, s.street)
     
-    if num_actions == 9:
+    def run_9_action():
         return lax.while_loop(cond, _betting_body_9, init_state)
-    elif num_actions == 6:
+    
+    def run_6_action():
         return lax.while_loop(cond, _betting_body_6, init_state)
-    else:  # num_actions == 3
+    
+    def run_3_action():
         return lax.while_loop(cond, _betting_body_3, init_state)
+    
+    # Use lax.cond instead of if statements for JAX compatibility
+    return lax.cond(
+        num_actions == 9,
+        run_9_action,
+        lambda: lax.cond(
+            num_actions == 6,
+            run_6_action,
+            run_3_action
+        )
+    )
 
 # ---------- Street ----------
 def play_street(state: GameState, num_cards: int, num_actions: int = 9) -> GameState:
@@ -461,8 +487,20 @@ def play_street(state: GameState, num_cards: int, num_actions: int = 9) -> GameS
             acted_this_round=jnp.array([0], dtype=jnp.int8),
             cur_player=jnp.array([0], dtype=jnp.int8)
         )
-    state = lax.cond(num_cards > 0, deal, lambda x: x, state)
-    return run_betting_round(state, num_actions)
+    
+    def deal_and_bet():
+        state_with_cards = lax.cond(num_cards > 0, deal, lambda x: x, state)
+        return run_betting_round(state_with_cards, num_actions)
+    
+    def just_bet():
+        return run_betting_round(state, num_actions)
+    
+    # Use lax.cond for JAX compatibility
+    return lax.cond(
+        num_cards > 0,
+        deal_and_bet,
+        just_bet
+    )
 
 # ---------- Showdown ----------
 def resolve_showdown(state: GameState, lut_keys, lut_values, table_size) -> jax.Array:
