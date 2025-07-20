@@ -253,13 +253,23 @@ def _cfr_step_pure(
                     jnp.max(batch_regret_updates, axis=(1,2)),
                     jnp.mean(batch_regret_updates, axis=(1,2)))
     
-    # Promediar las actualizaciones de regret de todos los juegos del batch
-    regret_updates = jnp.mean(batch_regret_updates, axis=0)
+    # CRITICAL FIX: Accumulate regret updates instead of averaging to prevent cancellation
+    # CFR requires accumulating regret information from all games, not normalizing
+    regret_updates = jnp.sum(batch_regret_updates, axis=0)
+    
+    # SAFEGUARD: Validate regret magnitude to prevent zero-learning bugs
+    regret_magnitude = jnp.sum(jnp.abs(regret_updates))
+    jax.debug.print("🛡️  SAFEGUARD: Regret magnitude validation:")
+    jax.debug.print("  regret_updates magnitude: min={}, max={}, total={}",
+                    jnp.min(regret_updates), jnp.max(regret_updates), regret_magnitude)
+    
+    # Critical check: Warn if regret updates are suspiciously small
+    jax.debug.print("⚠️  Zero-learning check: magnitude < 0.001? {}", regret_magnitude < 0.001)
     
     # DEBUG: Log final aggregated result
     jax.debug.print("🎯 Final Aggregation:")
     jax.debug.print("  regret_updates magnitude: min={}, max={}, sum={}",
-                    jnp.min(regret_updates), jnp.max(regret_updates), jnp.sum(jnp.abs(regret_updates)))
+                    jnp.min(regret_updates), jnp.max(regret_updates), regret_magnitude)
     
     # Aplicar descuento de regrets si está habilitado
     discounted_regrets = jnp.where(
