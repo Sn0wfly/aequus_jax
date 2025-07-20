@@ -21,7 +21,7 @@ from .bucketing import compute_info_set_id, validate_bucketing_system
 
 logger = logging.getLogger(__name__)
 
-@dataclass
+@dataclass(frozen=True)
 class TrainerConfig:
     """Enhanced configuration for CFR training with hybrid CFR+ support"""
     # Core training parameters
