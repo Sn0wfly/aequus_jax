@@ -334,10 +334,10 @@ def _compute_pot_bucket(game_state) -> jnp.ndarray:
 # VALIDATION AND TESTING FUNCTIONS
 # ==============================================================================
 
-@jax.jit
 def test_hand_differentiation():
     """
     Test that different hands get different buckets.
+    Simplified version without JIT to avoid tracing issues.
     """
     # Test pairs
     aa = jnp.array([48, 49])  # AA
@@ -351,48 +351,17 @@ def test_hand_differentiation():
     ako = jnp.array([48, 43])  # AK offsuit
     aqo = jnp.array([48, 39])  # AQ offsuit
     
-    buckets = jax.vmap(lambda cards: _compute_hand_bucket(cards, jnp.full(5, -1)))(
-        jnp.stack([aa, kk, aks, aqs, ako, aqo])
-    )
+    # Compute buckets without vmap to avoid tracing issues
+    buckets = []
+    test_hands = [aa, kk, aks, aqs, ako, aqo]
     
-    # Check that all buckets are different by comparing each pair
-    # This is JAX-compatible and doesn't use jnp.unique
-    def check_unique(buckets):
-        # Compare each bucket with all others
-        def compare_with_others(idx):
-            current = buckets[idx]
-            # Use lax.dynamic_slice for JAX compatibility
-            def get_others():
-                # Use lax.cond for JAX compatibility
-                def case_0():
-                    return buckets[1:]
-                
-                def case_last():
-                    return buckets[:-1]
-                
-                def case_middle():
-                    first_part = lax.dynamic_slice(buckets, (0,), (idx,))
-                    second_part = lax.dynamic_slice(buckets, (idx + 1,), (len(buckets) - idx - 1,))
-                    return jnp.concatenate([first_part, second_part])
-                
-                return lax.cond(
-                    idx == 0,
-                    case_0,
-                    lax.cond(
-                        idx == len(buckets) - 1,
-                        case_last,
-                        case_middle
-                    )
-                )
-            
-            others = get_others()
-            return jnp.all(current != others)
-        
-        # Check uniqueness for each bucket
-        uniqueness_checks = jax.vmap(compare_with_others)(jnp.arange(len(buckets)))
-        return jnp.all(uniqueness_checks)
+    for cards in test_hands:
+        bucket = _compute_hand_bucket(cards, jnp.full(5, -1))
+        buckets.append(int(bucket))  # Convert to Python int
     
-    return check_unique(buckets)
+    # Simple Python-based uniqueness check
+    unique_buckets = len(set(buckets))
+    return unique_buckets == len(buckets)  # All buckets are unique
 
 def validate_bucketing_system():
     """
