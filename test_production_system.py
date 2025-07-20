@@ -176,7 +176,7 @@ def main():
     # Memory usage check
     try:
         strategy_memory = final_strategy.nbytes / (1024**2)  # MB
-        regret_memory = trainer_state.regrets.nbytes / (1024**2)  # MB
+        regret_memory = trainer.regrets.nbytes / (1024**2)  # MB
         total_memory = strategy_memory + regret_memory
         
         print(f"   💾 Memory usage:")
