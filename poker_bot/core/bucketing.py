@@ -3,6 +3,7 @@
 """
 JAX-Native Info Set Computation for Poker AI
 Pure JAX implementation without CuPy dependencies
+Enhanced for NLHE with improved position and stack awareness
 """
 
 import jax
@@ -21,18 +22,23 @@ POSITION_BUCKETS = 6   # UTG, UTG+1, MP, CO, BTN, BB
 STREET_BUCKETS = 4     # Preflop, Flop, Turn, River
 STACK_BUCKETS = 20     # Stack depth categories
 POT_BUCKETS = 10       # Pot size categories
+ACTION_BUCKETS = 9     # Action history buckets
 
 @jax.jit
 def compute_info_set_id(hole_cards: jnp.ndarray, community_cards: jnp.ndarray, 
-                       player_idx: int, pot_size: jnp.ndarray = None) -> jnp.ndarray:
+                       player_idx: int, pot_size: jnp.ndarray = None, 
+                       stack_size: jnp.ndarray = None, action_history: jnp.ndarray = None) -> jnp.ndarray:
     """
     Compute unique info set ID for a player given their cards and game state.
+    Enhanced for NLHE with improved position and stack awareness.
     
     Args:
         hole_cards: Player's hole cards [2] array
         community_cards: Community cards [5] array (-1 for missing)
         player_idx: Player index (0-5)
         pot_size: Current pot size (optional)
+        stack_size: Player's stack size (optional)
+        action_history: Recent action history (optional)
         
     Returns:
         Unique info set ID as int32
@@ -43,33 +49,43 @@ def compute_info_set_id(hole_cards: jnp.ndarray, community_cards: jnp.ndarray,
     street_bucket = _compute_street_bucket(community_cards)
     position_bucket = _compute_position_bucket(player_idx)
     
-    # Use simplified buckets for pot and stack (can be enhanced later)
-    if pot_size is not None:
-        pot_value = jnp.squeeze(pot_size)
-        stack_bucket = jnp.clip(pot_value / 5.0, 0, STACK_BUCKETS - 1).astype(jnp.int32)
-        pot_bucket = jnp.clip(pot_value / 10.0, 0, POT_BUCKETS - 1).astype(jnp.int32)
+    # Enhanced stack and pot bucketing
+    if stack_size is not None:
+        stack_bucket = _compute_stack_bucket_enhanced(stack_size, pot_size)
     else:
-        # Default values when pot_size not available
         stack_bucket = jnp.int32(0)
+    
+    if pot_size is not None:
+        pot_bucket = _compute_pot_bucket_enhanced(pot_size, stack_size)
+    else:
         pot_bucket = jnp.int32(0)
     
-    # Combine all factors into unique ID
+    # Action history bucketing for NLHE
+    if action_history is not None:
+        action_bucket = _compute_action_history_bucket(action_history)
+    else:
+        action_bucket = jnp.int32(0)
+    
+    # Combine all factors into unique ID with improved weighting
+    # Use larger ranges for more important factors
     info_set_id = (
-        street_bucket * 10000 +     # 4 * 10000 = 40,000
-        hand_bucket * 50 +          # 169 * 50 = 8,450
-        position_bucket * 8 +       # 6 * 8 = 48
-        stack_bucket * 2 +          # 20 * 2 = 40
-        pot_bucket                  # 10 * 1 = 10
+        street_bucket * 100000 +     # 4 * 100000 = 400,000
+        hand_bucket * 2000 +         # 169 * 2000 = 338,000
+        position_bucket * 300 +      # 6 * 300 = 1,800
+        stack_bucket * 15 +          # 20 * 15 = 300
+        pot_bucket * 3 +             # 10 * 3 = 30
+        action_bucket                # 9 * 1 = 9
     )
     
-    # Ensure within valid range (max 50,000 info sets)
-    return jnp.mod(info_set_id, 50000).astype(jnp.int32)
+    # Ensure within valid range (max 500,000 info sets)
+    return jnp.mod(info_set_id, 500000).astype(jnp.int32)
 
 @jax.jit
 def _compute_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
     """
     Computa el bucket de la mano usando una fórmula combinatoria estándar y robusta.
     Garantiza un mapeo único y correcto de las 1326 combinaciones preflop a 169 buckets.
+    Enhanced for postflop play.
     """
     # 1. CONVENCIÓN DE RANGO/PALO (COMPATIBLE CON EL CÓDIGO EXISTENTE)
     # Usar la misma convención que el resto del código
@@ -127,8 +143,16 @@ def _compute_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) 
         )
     )
     
-    # El resultado final es un ID único y garantizado entre 0 y 168.
-    return bucket.astype(jnp.int32)
+    # 5. POSTFLOP ENHANCEMENT: Adjust bucket based on community cards
+    num_community = jnp.sum(community_cards >= 0)
+    postflop_adjustment = jnp.where(
+        num_community >= 3,
+        jnp.int32(169),  # Add offset for postflop hands
+        jnp.int32(0)
+    )
+    
+    # El resultado final es un ID único y garantizado
+    return (bucket + postflop_adjustment).astype(jnp.int32)
 
 @jax.jit
 def _compute_street_bucket(community_cards: jnp.ndarray) -> jnp.ndarray:
@@ -160,20 +184,124 @@ def _compute_street_bucket(community_cards: jnp.ndarray) -> jnp.ndarray:
 @jax.jit
 def _compute_position_bucket(player_idx: int) -> jnp.ndarray:
     """
-    Compute position bucket for player.
+    Compute position bucket for player with NLHE awareness.
     
     Args:
         player_idx: Player index (0-5)
         
     Returns:
-        Position bucket (0-5)
+        Position bucket (0-5): UTG, UTG+1, MP, CO, BTN, BB
     """
     return jnp.int32(player_idx)
 
 @jax.jit
+def _compute_stack_bucket_enhanced(stack_size: jnp.ndarray, pot_size: jnp.ndarray = None) -> jnp.ndarray:
+    """
+    Compute stack depth bucket with NLHE awareness.
+    
+    Args:
+        stack_size: Player's stack size
+        pot_size: Current pot size (optional)
+        
+    Returns:
+        Stack bucket (0-19)
+    """
+    stack_value = jnp.squeeze(stack_size)
+    
+    if pot_size is not None:
+        pot_value = jnp.squeeze(pot_size)
+        # Stack-to-pot ratio bucketing
+        spr = stack_value / jnp.maximum(pot_value, 1.0)
+        
+        # NLHE-specific stack depth categories
+        bucket = jnp.where(
+            spr < 1.0, jnp.int32(0),  # All-in or near all-in
+            jnp.where(
+                spr < 2.0, jnp.int32(1),  # Short stack
+                jnp.where(
+                    spr < 4.0, jnp.int32(2),  # Medium stack
+                    jnp.where(
+                        spr < 8.0, jnp.int32(3),  # Deep stack
+                        jnp.int32(4)  # Very deep stack
+                    )
+                )
+            )
+        )
+        
+        # Add position-based adjustment
+        position_factor = jnp.int32(5)  # Base multiplier
+        return bucket * position_factor
+    else:
+        # Fallback to absolute stack size
+        return jnp.clip(stack_value / 50.0, 0, STACK_BUCKETS - 1).astype(jnp.int32)
+
+@jax.jit
+def _compute_pot_bucket_enhanced(pot_size: jnp.ndarray, stack_size: jnp.ndarray = None) -> jnp.ndarray:
+    """
+    Compute pot size bucket with NLHE awareness.
+    
+    Args:
+        pot_size: Current pot size
+        stack_size: Player's stack size (optional)
+        
+    Returns:
+        Pot bucket (0-9)
+    """
+    pot_value = jnp.squeeze(pot_size)
+    
+    if stack_size is not None:
+        stack_value = jnp.squeeze(stack_size)
+        # Pot-to-stack ratio bucketing
+        psr = pot_value / jnp.maximum(stack_value, 1.0)
+        
+        # NLHE-specific pot size categories
+        bucket = jnp.where(
+            psr < 0.25, jnp.int32(0),  # Small pot
+            jnp.where(
+                psr < 0.5, jnp.int32(1),  # Medium pot
+                jnp.where(
+                    psr < 1.0, jnp.int32(2),  # Large pot
+                    jnp.where(
+                        psr < 2.0, jnp.int32(3),  # Very large pot
+                        jnp.int32(4)  # Massive pot
+                    )
+                )
+            )
+        )
+        
+        return bucket
+    else:
+        # Fallback to absolute pot size
+        return jnp.clip(pot_value / 10.0, 0, POT_BUCKETS - 1).astype(jnp.int32)
+
+@jax.jit
+def _compute_action_history_bucket(action_history: jnp.ndarray) -> jnp.ndarray:
+    """
+    Compute action history bucket for NLHE.
+    
+    Args:
+        action_history: Recent action history
+        
+    Returns:
+        Action bucket (0-8)
+    """
+    # Simple hash of recent actions
+    if action_history is None or action_history.size == 0:
+        return jnp.int32(0)
+    
+    # Take last few actions and create a simple hash
+    recent_actions = action_history[-3:]  # Last 3 actions
+    valid_actions = jnp.where(recent_actions >= 0, recent_actions, 0)
+    
+    # Create hash from action sequence
+    action_hash = jnp.sum(valid_actions * jnp.array([1, 3, 9]))
+    
+    return jnp.mod(action_hash, ACTION_BUCKETS).astype(jnp.int32)
+
+@jax.jit
 def _compute_stack_bucket(game_state, player_idx: int) -> jnp.ndarray:
     """
-    Compute stack depth bucket.
+    Compute stack depth bucket (legacy function for backward compatibility).
     
     Args:
         game_state: Game state from engine
@@ -190,7 +318,7 @@ def _compute_stack_bucket(game_state, player_idx: int) -> jnp.ndarray:
 @jax.jit
 def _compute_pot_bucket(game_state) -> jnp.ndarray:
     """
-    Compute pot size bucket.
+    Compute pot size bucket (legacy function for backward compatibility).
     
     Args:
         game_state: Game state from engine
@@ -202,78 +330,127 @@ def _compute_pot_bucket(game_state) -> jnp.ndarray:
     pot_bucket = jnp.clip(pot_size / 10.0, 0, POT_BUCKETS - 1)
     return pot_bucket.astype(jnp.int32)
 
-# Utility functions for testing and validation
+# ==============================================================================
+# VALIDATION AND TESTING FUNCTIONS
+# ==============================================================================
+
 @jax.jit
 def test_hand_differentiation():
     """
-    Test that different hands map to different buckets.
-    
-    Returns:
-        Dict with test results
+    Test that different hands get different buckets.
     """
-    # Mock community cards (all -1 for preflop)
-    mock_community = jnp.full(5, -1, dtype=jnp.int8)
+    # Test pairs
+    aa = jnp.array([48, 49])  # AA
+    kk = jnp.array([44, 45])  # KK
     
-    # Test hands: AA vs 72o
-    aa_hole = jnp.array([51, 47], dtype=jnp.int8)  # Ace of spades, Ace of clubs
-    trash_hole = jnp.array([23, 0], dtype=jnp.int8)  # 7 of clubs, 2 of spades
+    # Test suited hands
+    aks = jnp.array([48, 44])  # AK suited
+    aqs = jnp.array([48, 40])  # AQ suited
     
-    aa_bucket = _compute_hand_bucket(aa_hole, mock_community)
-    trash_bucket = _compute_hand_bucket(trash_hole, mock_community)
+    # Test offsuit hands
+    ako = jnp.array([48, 43])  # AK offsuit
+    aqo = jnp.array([48, 39])  # AQ offsuit
     
-    return {
-        'aa_bucket': aa_bucket,
-        'trash_bucket': trash_bucket,
-        'different': aa_bucket != trash_bucket
-    }
+    buckets = jax.vmap(lambda cards: _compute_hand_bucket(cards, jnp.full(5, -1)))(
+        jnp.stack([aa, kk, aks, aqs, ako, aqo])
+    )
+    
+    # All buckets should be different
+    unique_buckets = jnp.unique(buckets)
+    return jnp.array_equal(unique_buckets.size, buckets.size)
 
 def validate_bucketing_system():
     """
-    Comprehensive validation of the bucketing system.
+    Validate the entire bucketing system.
     
     Returns:
-        Validation results
+        True if validation passes, False otherwise
     """
-    logger.info("🧪 Validating JAX-Native Bucketing System...")
-    
     try:
-        # Test basic differentiation
-        test_results = test_hand_differentiation()
-        
-        if test_results['different']:
-            logger.info(f"✅ Hand differentiation: AA({test_results['aa_bucket']}) != 72o({test_results['trash_bucket']})")
-        else:
-            logger.error(f"❌ Hand differentiation failed: AA({test_results['aa_bucket']}) == 72o({test_results['trash_bucket']})")
+        # Test hand differentiation
+        if not test_hand_differentiation():
+            logger.error("❌ Hand differentiation test failed")
             return False
         
-        # Test bucket ranges
-        mock_community = jnp.full(5, -1, dtype=jnp.int8)
-        test_hands = [
-            jnp.array([51, 47], dtype=jnp.int8),  # AA
-            jnp.array([50, 46], dtype=jnp.int8),  # KK  
-            jnp.array([42, 38], dtype=jnp.int8),  # QJ suited
-            jnp.array([23, 0], dtype=jnp.int8),   # 72o
-        ]
+        # Test info set ID generation
+        hole_cards = jnp.array([48, 49])  # AA
+        community_cards = jnp.full(5, -1)  # Preflop
+        player_idx = 0
+        pot_size = jnp.array([15.0])
+        stack_size = jnp.array([1000.0])
         
-        buckets = []
-        for hand in test_hands:
-            bucket = _compute_hand_bucket(hand, mock_community)
-            buckets.append(int(bucket))
+        info_set_id = compute_info_set_id(hole_cards, community_cards, player_idx, pot_size, stack_size)
         
-        unique_buckets = len(set(buckets))
-        logger.info(f"✅ Bucket diversity: {unique_buckets}/{len(test_hands)} unique buckets")
-        logger.info(f"   Buckets: {buckets}")
+        if info_set_id < 0 or info_set_id >= 500000:
+            logger.error(f"❌ Invalid info set ID: {info_set_id}")
+            return False
         
-        # Verify all buckets are in valid range
-        valid_range = all(0 <= b < PREFLOP_BUCKETS for b in buckets)
-        logger.info(f"✅ Valid range: {valid_range}")
-        
-        return unique_buckets >= 3 and valid_range
+        logger.info("✅ Bucketing system validation passed")
+        return True
         
     except Exception as e:
-        logger.error(f"❌ Bucketing validation failed: {e}")
+        logger.error(f"❌ Bucketing system validation failed: {e}")
         return False
 
-# Initialize validation on import (optional)
-if __name__ == "__main__":
-    validate_bucketing_system()
+# ==============================================================================
+# UTILITY FUNCTIONS FOR NLHE
+# ==============================================================================
+
+@jax.jit
+def compute_nlhe_info_set_features(hole_cards: jnp.ndarray, community_cards: jnp.ndarray,
+                                  player_idx: int, pot_size: jnp.ndarray, 
+                                  stack_size: jnp.ndarray) -> Dict[str, jnp.ndarray]:
+    """
+    Compute comprehensive NLHE info set features.
+    
+    Returns:
+        Dictionary of features for NLHE analysis
+    """
+    hand_bucket = _compute_hand_bucket(hole_cards, community_cards)
+    street_bucket = _compute_street_bucket(community_cards)
+    position_bucket = _compute_position_bucket(player_idx)
+    stack_bucket = _compute_stack_bucket_enhanced(stack_size, pot_size)
+    pot_bucket = _compute_pot_bucket_enhanced(pot_size, stack_size)
+    
+    # Compute additional NLHE-specific features
+    stack_to_pot_ratio = jnp.squeeze(stack_size) / jnp.maximum(jnp.squeeze(pot_size), 1.0)
+    hand_strength = _compute_hand_strength_estimate(hole_cards, community_cards)
+    
+    return {
+        'hand_bucket': hand_bucket,
+        'street_bucket': street_bucket,
+        'position_bucket': position_bucket,
+        'stack_bucket': stack_bucket,
+        'pot_bucket': pot_bucket,
+        'stack_to_pot_ratio': stack_to_pot_ratio,
+        'hand_strength': hand_strength
+    }
+
+@jax.jit
+def _compute_hand_strength_estimate(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
+    """
+    Compute a simple hand strength estimate for NLHE.
+    
+    Returns:
+        Hand strength estimate (0.0 to 1.0)
+    """
+    ranks = (hole_cards // 4).astype(jnp.int32)
+    suits = (hole_cards % 4).astype(jnp.int32)
+    
+    # High card value
+    high_card_value = jnp.max(ranks) / 12.0
+    
+    # Pair bonus
+    pair_bonus = jnp.where(ranks[0] == ranks[1], 0.3, 0.0)
+    
+    # Suited bonus
+    suited_bonus = jnp.where(suits[0] == suits[1], 0.1, 0.0)
+    
+    # Connected bonus
+    rank_diff = jnp.abs(ranks[0] - ranks[1])
+    connected_bonus = jnp.where(rank_diff <= 2, 0.1, 0.0)
+    
+    # Combine all factors
+    strength = high_card_value + pair_bonus + suited_bonus + connected_bonus
+    
+    return jnp.clip(strength, 0.0, 1.0)

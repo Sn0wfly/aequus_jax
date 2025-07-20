@@ -11,6 +11,9 @@ from ..evaluator import HandEvaluator
 MAX_GAME_LENGTH = 60
 evaluator = HandEvaluator()
 
+# Action definitions for 9-action NLHE system
+# 0: FOLD, 1: CHECK, 2: CALL, 3: BET_SMALL, 4: BET_MED, 5: BET_LARGE, 6: RAISE_SMALL, 7: RAISE_MED, 8: ALL_IN
+
 # ---------- Pytree dataclass -----------
 @register_pytree_node_class
 @dataclass
@@ -102,24 +105,260 @@ def is_betting_done(status, bets, acted, _):
     return (num_active <= 1) | all_called
 
 @jax.jit
-def get_legal_actions(state: GameState):
-    mask = jnp.zeros(3, dtype=jnp.bool_)
-    # Extraer índice del jugador de manera compatible con vmap
-    p = jnp.squeeze(state.cur_player)  # Funciona tanto para escalares como arrays
+def get_legal_actions_9(state: GameState):
+    """
+    Get legal actions for 9-action NLHE system.
+    
+    Returns:
+        Boolean mask of legal actions [9]
+    """
+    mask = jnp.zeros(9, dtype=jnp.bool_)
+    p = jnp.squeeze(state.cur_player)
     status = state.player_status[p]
     can_act = status == 0
     current = state.bets[p]
     max_bet = jnp.max(state.bets)
     to_call = max_bet - current
+    pot_size = jnp.squeeze(state.pot)
+    
+    # FOLD (0) - always legal if can act
+    mask = mask.at[0].set(can_act)
+    
+    # CHECK (1) - legal if no bet to call
+    mask = mask.at[1].set(can_act & (to_call == 0))
+    
+    # CALL (2) - legal if there's a bet to call and enough chips
+    mask = mask.at[2].set(can_act & (to_call > 0) & (state.stacks[p] >= to_call))
+    
+    # BET actions (3, 4, 5) - legal if no bet to call and have chips
+    bet_small = jnp.minimum(pot_size * 0.25, state.stacks[p])  # 25% pot
+    bet_med = jnp.minimum(pot_size * 0.5, state.stacks[p])     # 50% pot
+    bet_large = jnp.minimum(pot_size * 0.75, state.stacks[p])  # 75% pot
+    
+    mask = mask.at[3].set(can_act & (to_call == 0) & (state.stacks[p] > 0) & (bet_small > 0))
+    mask = mask.at[4].set(can_act & (to_call == 0) & (state.stacks[p] > 0) & (bet_med > 0))
+    mask = mask.at[5].set(can_act & (to_call == 0) & (state.stacks[p] > 0) & (bet_large > 0))
+    
+    # RAISE actions (6, 7) - legal if there's a bet to raise and have chips
+    raise_small = jnp.minimum(max_bet + pot_size * 0.25, state.stacks[p] + current)
+    raise_med = jnp.minimum(max_bet + pot_size * 0.5, state.stacks[p] + current)
+    
+    mask = mask.at[6].set(can_act & (to_call > 0) & (state.stacks[p] > 0) & (raise_small > max_bet))
+    mask = mask.at[7].set(can_act & (to_call > 0) & (state.stacks[p] > 0) & (raise_med > max_bet))
+    
+    # ALL_IN (8) - always legal if can act and have chips
+    mask = mask.at[8].set(can_act & (state.stacks[p] > 0))
+    
+    return mask
+
+@jax.jit
+def get_legal_actions_6(state: GameState):
+    """
+    Get legal actions for 6-action system (backward compatibility).
+    
+    Returns:
+        Boolean mask of legal actions [6]
+    """
+    mask = jnp.zeros(6, dtype=jnp.bool_)
+    p = jnp.squeeze(state.cur_player)
+    status = state.player_status[p]
+    can_act = status == 0
+    current = state.bets[p]
+    max_bet = jnp.max(state.bets)
+    to_call = max_bet - current
+    
     mask = mask.at[0].set(can_act)  # fold
     mask = mask.at[1].set(can_act & ((to_call == 0) | (state.stacks[p] >= to_call)))  # check/call
     mask = mask.at[2].set(can_act & (state.stacks[p] > 0) & (current != max_bet))  # bet/raise
+    mask = mask.at[3].set(can_act & (state.stacks[p] > 0) & (current != max_bet))  # bet/raise
+    mask = mask.at[4].set(can_act & (state.stacks[p] > 0) & (current != max_bet))  # bet/raise
+    mask = mask.at[5].set(can_act & (state.stacks[p] > 0))  # all_in
+    
+    return mask
+
+@jax.jit
+def get_legal_actions_3(state: GameState):
+    """
+    Get legal actions for 3-action system (backward compatibility).
+    
+    Returns:
+        Boolean mask of legal actions [3]
+    """
+    mask = jnp.zeros(3, dtype=jnp.bool_)
+    p = jnp.squeeze(state.cur_player)
+    status = state.player_status[p]
+    can_act = status == 0
+    current = state.bets[p]
+    max_bet = jnp.max(state.bets)
+    to_call = max_bet - current
+    
+    mask = mask.at[0].set(can_act)  # fold
+    mask = mask.at[1].set(can_act & ((to_call == 0) | (state.stacks[p] >= to_call)))  # check/call
+    mask = mask.at[2].set(can_act & (state.stacks[p] > 0) & (current != max_bet))  # bet/raise
+    
     return mask
 
 # ---------- Step ----------
 @jax.jit
-def apply_action(state, action):
-    p = jnp.squeeze(state.cur_player)  # Compatible con vmap
+def apply_action_9(state, action):
+    """
+    Apply action for 9-action NLHE system.
+    
+    Args:
+        state: Current game state
+        action: Action index (0-8)
+        
+    Returns:
+        Updated game state
+    """
+    p = jnp.squeeze(state.cur_player)
+    current = state.bets[p]
+    max_bet = jnp.max(state.bets)
+    to_call = max_bet - current
+    pot_size = jnp.squeeze(state.pot)
+
+    def do_fold(s):
+        return replace(s, player_status=s.player_status.at[p].set(1))
+
+    def do_check(s):
+        return s  # No change to state
+
+    def do_call(s):
+        amt = jnp.minimum(to_call, s.stacks[p])
+        return replace(
+            s,
+            stacks=s.stacks.at[p].add(-amt),
+            bets=s.bets.at[p].add(amt),
+            pot=s.pot + amt
+        )
+
+    def do_bet_small(s):
+        amt = jnp.minimum(pot_size * 0.25, s.stacks[p])
+        return replace(
+            s,
+            stacks=s.stacks.at[p].add(-amt),
+            bets=s.bets.at[p].add(amt),
+            pot=s.pot + amt
+        )
+
+    def do_bet_med(s):
+        amt = jnp.minimum(pot_size * 0.5, s.stacks[p])
+        return replace(
+            s,
+            stacks=s.stacks.at[p].add(-amt),
+            bets=s.bets.at[p].add(amt),
+            pot=s.pot + amt
+        )
+
+    def do_bet_large(s):
+        amt = jnp.minimum(pot_size * 0.75, s.stacks[p])
+        return replace(
+            s,
+            stacks=s.stacks.at[p].add(-amt),
+            bets=s.bets.at[p].add(amt),
+            pot=s.pot + amt
+        )
+
+    def do_raise_small(s):
+        amt = jnp.minimum(max_bet + pot_size * 0.25 - current, s.stacks[p])
+        return replace(
+            s,
+            stacks=s.stacks.at[p].add(-amt),
+            bets=s.bets.at[p].add(amt),
+            pot=s.pot + amt
+        )
+
+    def do_raise_med(s):
+        amt = jnp.minimum(max_bet + pot_size * 0.5 - current, s.stacks[p])
+        return replace(
+            s,
+            stacks=s.stacks.at[p].add(-amt),
+            bets=s.bets.at[p].add(amt),
+            pot=s.pot + amt
+        )
+
+    def do_all_in(s):
+        amt = s.stacks[p]
+        return replace(
+            s,
+            stacks=s.stacks.at[p].set(0.0),
+            bets=s.bets.at[p].add(amt),
+            pot=s.pot + amt
+        )
+
+    # Apply action using lax.switch
+    state2 = lax.switch(
+        jnp.clip(action, 0, 8), 
+        [do_fold, do_check, do_call, do_bet_small, do_bet_med, do_bet_large, 
+         do_raise_small, do_raise_med, do_all_in], 
+        state
+    )
+    
+    new_hist = state2.action_hist.at[state2.hist_ptr[0]].set(action)
+    return replace(
+        state2,
+        action_hist=new_hist,
+        hist_ptr=state2.hist_ptr + 1,
+        acted_this_round=state2.acted_this_round + 1
+    )
+
+@jax.jit
+def apply_action_6(state, action):
+    """Apply action for 6-action system (backward compatibility)."""
+    p = jnp.squeeze(state.cur_player)
+    current = state.bets[p]
+    max_bet = jnp.max(state.bets)
+    to_call = max_bet - current
+
+    def do_fold(s):
+        return replace(s, player_status=s.player_status.at[p].set(1))
+
+    def do_check_call(s):
+        amt = jnp.where(to_call > 0, to_call, 0.0)
+        return replace(
+            s,
+            stacks=s.stacks.at[p].add(-amt),
+            bets=s.bets.at[p].add(amt),
+            pot=s.pot + amt
+        )
+
+    def do_bet_raise(s):
+        amt = jnp.minimum(20.0, s.stacks[p])
+        return replace(
+            s,
+            stacks=s.stacks.at[p].add(-amt),
+            bets=s.bets.at[p].add(amt),
+            pot=s.pot + amt
+        )
+
+    def do_all_in(s):
+        amt = s.stacks[p]
+        return replace(
+            s,
+            stacks=s.stacks.at[p].set(0.0),
+            bets=s.bets.at[p].add(amt),
+            pot=s.pot + amt
+        )
+
+    # Map 6-action system to appropriate actions
+    state2 = lax.switch(
+        jnp.clip(action, 0, 5),
+        [do_fold, do_check_call, do_check_call, do_bet_raise, do_bet_raise, do_all_in],
+        state
+    )
+    
+    new_hist = state2.action_hist.at[state2.hist_ptr[0]].set(action)
+    return replace(
+        state2,
+        action_hist=new_hist,
+        hist_ptr=state2.hist_ptr + 1,
+        acted_this_round=state2.acted_this_round + 1
+    )
+
+@jax.jit
+def apply_action_3(state, action):
+    """Apply action for 3-action system (backward compatibility)."""
+    p = jnp.squeeze(state.cur_player)
     current = state.bets[p]
     max_bet = jnp.max(state.bets)
     to_call = max_bet - current
@@ -154,27 +393,63 @@ def apply_action(state, action):
         acted_this_round=state2.acted_this_round + 1
     )
 
-def step(state, action):
-    return apply_action(state, action)
+def step(state, action, num_actions=9):
+    """Apply action with configurable action space."""
+    if num_actions == 9:
+        return apply_action_9(state, action)
+    elif num_actions == 6:
+        return apply_action_6(state, action)
+    else:  # num_actions == 3
+        return apply_action_3(state, action)
 
 # ---------- Betting round ----------
-def _betting_body(state):
-    legal = get_legal_actions(state)
+def _betting_body_9(state):
+    """Betting round body for 9-action system."""
+    legal = get_legal_actions_9(state)
     key, subkey = jax.random.split(state.key)
     action = jax.random.categorical(subkey, jnp.where(legal, 0.0, -1e9))
     state = replace(state, key=key)
-    state = apply_action(state, action)
-    current_p = jnp.squeeze(state.cur_player)  # Compatible con vmap
+    state = apply_action_9(state, action)
+    current_p = jnp.squeeze(state.cur_player)
+    next_p = next_active_player(state.player_status, (current_p + 1) % 6)
+    return replace(state, cur_player=jnp.array([next_p], dtype=jnp.int8))
+
+def _betting_body_6(state):
+    """Betting round body for 6-action system."""
+    legal = get_legal_actions_6(state)
+    key, subkey = jax.random.split(state.key)
+    action = jax.random.categorical(subkey, jnp.where(legal, 0.0, -1e9))
+    state = replace(state, key=key)
+    state = apply_action_6(state, action)
+    current_p = jnp.squeeze(state.cur_player)
+    next_p = next_active_player(state.player_status, (current_p + 1) % 6)
+    return replace(state, cur_player=jnp.array([next_p], dtype=jnp.int8))
+
+def _betting_body_3(state):
+    """Betting round body for 3-action system."""
+    legal = get_legal_actions_3(state)
+    key, subkey = jax.random.split(state.key)
+    action = jax.random.categorical(subkey, jnp.where(legal, 0.0, -1e9))
+    state = replace(state, key=key)
+    state = apply_action_3(state, action)
+    current_p = jnp.squeeze(state.cur_player)
     next_p = next_active_player(state.player_status, (current_p + 1) % 6)
     return replace(state, cur_player=jnp.array([next_p], dtype=jnp.int8))
 
 @jax.jit
-def run_betting_round(init_state):
+def run_betting_round(init_state, num_actions=9):
+    """Run betting round with configurable action space."""
     cond = lambda s: ~is_betting_done(s.player_status, s.bets, s.acted_this_round, s.street)
-    return lax.while_loop(cond, _betting_body, init_state)
+    
+    if num_actions == 9:
+        return lax.while_loop(cond, _betting_body_9, init_state)
+    elif num_actions == 6:
+        return lax.while_loop(cond, _betting_body_6, init_state)
+    else:  # num_actions == 3
+        return lax.while_loop(cond, _betting_body_3, init_state)
 
 # ---------- Street ----------
-def play_street(state: GameState, num_cards: int) -> GameState:
+def play_street(state: GameState, num_cards: int, num_actions: int = 9) -> GameState:
     def deal(s: GameState) -> GameState:
         start = s.deck_ptr[0]
         cards = lax.dynamic_slice(s.deck, (start,), (num_cards,))
@@ -187,7 +462,7 @@ def play_street(state: GameState, num_cards: int) -> GameState:
             cur_player=jnp.array([0], dtype=jnp.int8)
         )
     state = lax.cond(num_cards > 0, deal, lambda x: x, state)
-    return run_betting_round(state)
+    return run_betting_round(state, num_actions)
 
 # ---------- Showdown ----------
 def resolve_showdown(state: GameState, lut_keys, lut_values, table_size) -> jax.Array:
@@ -198,224 +473,139 @@ def resolve_showdown(state: GameState, lut_keys, lut_values, table_size) -> jax.
         winner = jnp.argmax(active)
         return -state.bets.at[winner].add(pot_scalar)
     
-    def full():
+    def multiple():
+        # Combine hole and community cards for each active player
         def eval_i(i):
-            cards = jnp.concatenate([state.hole_cards[i], state.comm_cards])
+            hole = state.hole_cards[i]
+            comm = state.comm_cards
+            cards = jnp.concatenate([hole, comm])
             return evaluate_hand_jax_native(cards, lut_keys, lut_values, table_size)
-         
-        strengths = jnp.array([lax.cond(active[i], lambda: eval_i(i), lambda: 9999) for i in range(6)])
-        best = jnp.min(strengths)
-        winners = (strengths == best) & active
-        share = pot_scalar / jnp.maximum(1, winners.sum())
+        
+        strengths = jax.vmap(eval_i)(jnp.arange(6))
+        active_strengths = jnp.where(active, strengths, -1)
+        winners = active_strengths == jnp.max(active_strengths)
+        num_winners = jnp.sum(winners)
+        share = pot_scalar / num_winners
         return -state.bets + winners * share
     
-    can_show = (state.comm_cards != -1).sum() >= 5
-    return lax.cond(active.sum() <= 1, single, lambda: lax.cond(can_show, full, single))
+    return lax.cond(active.sum() == 1, single, multiple)
 
-# ---------- Single game ----------
+# ---------- Game simulation ----------
 @jax.jit
-def play_one_game(key, lut_keys, lut_values, table_size):
-    deck = jax.random.permutation(key, jnp.arange(52, dtype=jnp.int8))
-    key, subkey = jax.random.split(key)
+def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9):
+    """Play one complete game with configurable action space."""
+    idx_scalar = jax.random.randint(key, (), 0, 1000000)
+    key = jax.random.fold_in(jax.random.PRNGKey(0), idx_scalar)
+    
+    # Initialize state
     stacks = jnp.full((6,), 1000.0)
     bets = jnp.zeros((6,)).at[0].set(5.0).at[1].set(10.0)
-    stacks = stacks.at[0].add(-5.0).at[1].add(-10.0)
+    player_status = jnp.zeros((6,), dtype=jnp.int8)
+    hole_cards = jnp.arange(12).reshape(6, 2)
+    comm_cards = jnp.full((5,), -1)
+    cur_player = jnp.array([2], dtype=jnp.int8)
+    street = jnp.array([0], dtype=jnp.int8)
+    pot = jnp.array([15.0])
+    deck = jnp.arange(52)
+    deck_ptr = jnp.array([12])
+    acted_this_round = jnp.array([0], dtype=jnp.int8)
+    action_hist = jnp.zeros((MAX_GAME_LENGTH,), dtype=jnp.int8)
+    hist_ptr = jnp.array([0])
+    
     state = GameState(
         stacks=stacks,
         bets=bets,
-        player_status=jnp.zeros((6,), dtype=jnp.int8),
-        hole_cards=deck[:12].reshape((6, 2)),
-        comm_cards=jnp.full((5,), -1, dtype=jnp.int8),
-        cur_player=jnp.array([2], dtype=jnp.int8),
-        street=jnp.array([0], dtype=jnp.int8),
-        pot=jnp.array([15.0]),
+        player_status=player_status,
+        hole_cards=hole_cards,
+        comm_cards=comm_cards,
+        cur_player=cur_player,
+        street=street,
+        pot=pot,
         deck=deck,
-        deck_ptr=jnp.array([12], dtype=jnp.int8),
-        acted_this_round=jnp.array([0], dtype=jnp.int8),
-        key=subkey,
-        action_hist=jnp.full((MAX_GAME_LENGTH,), -1, dtype=jnp.int32),
-        hist_ptr=jnp.array([0], dtype=jnp.int32)
+        deck_ptr=deck_ptr,
+        acted_this_round=acted_this_round,
+        key=key,
+        action_hist=action_hist,
+        hist_ptr=hist_ptr
     )
-    state = play_street(state, 3)  # flop
-    state = play_street(state, 1)  # turn
-    state = play_street(state, 1)  # river
+    
+    # Play streets
+    state = play_street(state, 0, num_actions)   # Preflop
+    state = play_street(state, 3, num_actions)   # Flop
+    state = play_street(state, 1, num_actions)   # Turn
+    state = play_street(state, 1, num_actions)   # River
+    
+    # Resolve showdown
     payoffs = resolve_showdown(state, lut_keys, lut_values, table_size)
-    return payoffs, state.action_hist
+    
+    return payoffs, state.action_hist, {
+        'hole_cards': state.hole_cards,
+        'final_community': state.comm_cards,
+        'final_pot': state.pot,
+        'player_stacks': state.stacks,
+        'player_bets': state.bets
+    }
 
-# ---------- Batch API ----------
 @jax.jit
-def batch_play(keys, lut_keys, lut_values, table_size):
-    return jax.vmap(play_one_game, in_axes=(0, None, None, None))(keys, lut_keys, lut_values, table_size)
+def batch_play(keys, lut_keys, lut_values, table_size, num_actions=9):
+    """Play multiple games in batch with configurable action space."""
+    return jax.vmap(lambda k: play_one_game(k, lut_keys, lut_values, table_size, num_actions))(keys)
 
 @jax.jit
 def initial_state_for_idx(idx):
     # Convertir idx a escalar de manera compatible con vmap
-    idx_scalar = jnp.squeeze(idx) if hasattr(idx, 'squeeze') else idx
+    idx_scalar = jax.random.randint(jax.random.PRNGKey(0), (), 0, 1000000)
     key = jax.random.fold_in(jax.random.PRNGKey(0), idx_scalar)
-    # Devuelve solo el estado inicial, no payoffs ni historia
-    deck = jax.random.permutation(key, jnp.arange(52, dtype=jnp.int8))
-    key, subkey = jax.random.split(key)
+    
+    # Initialize state
     stacks = jnp.full((6,), 1000.0)
     bets = jnp.zeros((6,)).at[0].set(5.0).at[1].set(10.0)
-    stacks = stacks.at[0].add(-5.0).at[1].add(-10.0)
-    state = GameState(
+    player_status = jnp.zeros((6,), dtype=jnp.int8)
+    hole_cards = jnp.arange(12).reshape(6, 2)
+    comm_cards = jnp.full((5,), -1)
+    cur_player = jnp.array([2], dtype=jnp.int8)
+    street = jnp.array([0], dtype=jnp.int8)
+    pot = jnp.array([15.0])
+    deck = jnp.arange(52)
+    deck_ptr = jnp.array([12])
+    acted_this_round = jnp.array([0], dtype=jnp.int8)
+    action_hist = jnp.zeros((MAX_GAME_LENGTH,), dtype=jnp.int8)
+    hist_ptr = jnp.array([0])
+    
+    return GameState(
         stacks=stacks,
         bets=bets,
-        player_status=jnp.zeros((6,), dtype=jnp.int8),
-        hole_cards=deck[:12].reshape((6, 2)),
-        comm_cards=jnp.full((5,), -1, dtype=jnp.int8),
-        cur_player=jnp.array([2], dtype=jnp.int8),
-        street=jnp.array([0], dtype=jnp.int8),
-        pot=jnp.array([15.0]),
+        player_status=player_status,
+        hole_cards=hole_cards,
+        comm_cards=comm_cards,
+        cur_player=cur_player,
+        street=street,
+        pot=pot,
         deck=deck,
-        deck_ptr=jnp.array([12], dtype=jnp.int8),
-        acted_this_round=jnp.array([0], dtype=jnp.int8),
-        key=subkey,
-        action_hist=jnp.full((MAX_GAME_LENGTH,), -1, dtype=jnp.int32),
-        hist_ptr=jnp.array([0], dtype=jnp.int32)
+        deck_ptr=deck_ptr,
+        acted_this_round=acted_this_round,
+        key=key,
+        action_hist=action_hist,
+        hist_ptr=hist_ptr
     )
-    return state
-
-# Agregar al final de full_game_engine.py
 
 @jax.jit
-def unified_batch_simulation_with_lut_production(keys, lut_keys, lut_values, table_size):
+def unified_batch_simulation_with_lut_production(keys, lut_keys, lut_values, table_size, num_actions=9):
     """
-    PRODUCTION VERSION: Real poker engine optimized for CFR+ training.
-    Uses actual LUT, realistic hand evaluation, and proper game logic.
-    Optimized for compilation speed while maintaining full functionality.
-    
-    Args:
-        keys: Random keys for each game
-        lut_keys: LUT hash keys array
-        lut_values: LUT hash values array
-        table_size: Size of the LUT table
-        
-    Returns:
-        (payoffs, histories, game_results) tuple - Real poker results
+    Production-ready batch simulation with configurable action space.
+    Optimized for speed and memory efficiency.
     """
-    batch_size = keys.shape[0]
-    
-    def real_poker_game(key):
-        """Real poker game simulation with optimized compilation"""
-        key1, key2, key3 = jax.random.split(key, 3)
-        
-        # Real deck shuffling (optimized)
-        deck = jax.random.permutation(key1, jnp.arange(52, dtype=jnp.int8))
-        hole_cards = deck[:12].reshape((6, 2))
-        community_cards = deck[12:17]
-        
-        # REAL hand evaluation using LUT
-        def evaluate_player_hand(player_hole):
-            full_hand = jnp.concatenate([player_hole, community_cards])
-            return evaluate_hand_jax_native(full_hand, lut_keys, lut_values, table_size)
-        
-        # Evaluate all hands with REAL LUT
-        hand_strengths = jax.vmap(evaluate_player_hand)(hole_cards)
-        
-        # REALISTIC betting simulation (simplified but real)
-        # Base pot and blinds
-        pot = 15.0  # SB + BB
-        
-        # Simulate realistic betting based on hand strength
-        betting_key = key2
-        strength_ranks = jnp.argsort(hand_strengths)  # Rank by hand strength
-        
-        # Realistic payoff calculation
-        # Stronger hands tend to win more
-        strength_percentiles = jnp.argsort(strength_ranks).astype(jnp.float32) / 5.0
-        
-        # Generate base payoffs with realistic variance
-        base_payoffs = jax.random.normal(key3, (6,)) * 25.0
-        
-        # Strength-based adjustments (stronger hands get better results)
-        strength_bonus = (strength_percentiles - 0.5) * 40.0  # ±20 based on strength
-        
-        # Combine and ensure zero-sum
-        total_payoffs = base_payoffs + strength_bonus
-        final_payoffs = total_payoffs - jnp.mean(total_payoffs)
-        
-        # Ensure pot consistency
-        pot_adjustment = pot - jnp.abs(jnp.sum(final_payoffs))
-        final_payoffs = final_payoffs * (pot / jnp.maximum(jnp.abs(jnp.sum(final_payoffs)), 1.0))
-        
-        return final_payoffs, hole_cards, community_cards, hand_strengths
-    
-    # Process entire batch with real poker simulation
-    results = jax.vmap(real_poker_game)(keys)
-    payoffs, hole_cards_batch, community_batch, hand_strengths_batch = results
-    
-    # Generate realistic action histories based on hand strengths
-    def generate_history(key, hand_strengths):
-        """Generate realistic action sequence based on hand strengths"""
-        # Simplified history generation
-        actions = jnp.where(
-            hand_strengths > jnp.percentile(hand_strengths, 75), 2,  # Strong: bet
-            jnp.where(
-                hand_strengths > jnp.percentile(hand_strengths, 25), 1,  # Medium: call
-                0  # Weak: fold
-            )
-        )
-        # Pad to full history length
-        history = jnp.full(MAX_GAME_LENGTH, -1, dtype=jnp.int32)
-        history = history.at[:6].set(actions)
-        return history
-    
-    histories = jax.vmap(generate_history)(keys, hand_strengths_batch)
-    
-    # REALISTIC game results based on actual play
-    final_pot = jnp.abs(jnp.sum(payoffs, axis=1)) + 15.0  # Include blinds
-    player_stacks = jnp.ones((batch_size, 6)) * 1000.0 + payoffs  # Starting stacks + results
-    player_bets = jnp.abs(payoffs) + 2.5  # Average bet per player
-    
-    game_results = {
-        'hole_cards': hole_cards_batch,
-        'final_community': community_batch,
-        'final_pot': final_pot,
-        'player_stacks': player_stacks,
-        'player_bets': player_bets
-    }
-    
-    return payoffs, histories, game_results
+    return batch_play(keys, lut_keys, lut_values, table_size, num_actions)
 
-# Keep original heavy version for full production use
 @jax.jit
-def unified_batch_simulation_with_lut_full(keys, lut_keys, lut_values, table_size):
+def unified_batch_simulation_with_lut_full(keys, lut_keys, lut_values, table_size, num_actions=9):
     """
-    FULL VERSION: Complete game simulation (may be slow to compile).
+    Full-featured batch simulation with detailed game data.
+    Returns comprehensive game information for analysis.
     """
-    # Run the basic batch simulation with LUT
-    payoffs, histories = batch_play(keys, lut_keys, lut_values, table_size)
-    
-    # Generate mock game results for training
-    batch_size = keys.shape[0]  # JAX-compatible shape access
-    
-    # Fill hole cards from actual game simulation
-    def extract_game_data(key):
-        deck = jax.random.permutation(key, jnp.arange(52, dtype=jnp.int8))
-        hole_cards = deck[:12].reshape((6, 2))
-        community_cards = deck[12:17]
-        return hole_cards, community_cards
-    
-    hole_cards_batch, community_batch = jax.vmap(extract_game_data)(keys)
-    
-    # Create all game results arrays directly - avoid dict modifications in JIT
-    final_pot = jnp.abs(jnp.sum(payoffs, axis=1))
-    player_stacks = jnp.ones((batch_size, 6)) * 100.0
-    player_bets = jnp.abs(payoffs)
-    
-    # Create game results as final dictionary
-    game_results = {
-        'hole_cards': hole_cards_batch,
-        'final_community': community_batch,
-        'final_pot': final_pot,
-        'player_stacks': player_stacks,
-        'player_bets': player_bets
-    }
-    
-    return payoffs, histories, game_results
+    return batch_play(keys, lut_keys, lut_values, table_size, num_actions)
 
-# Production version: Real poker engine optimized for CFR+ training
+# Backward compatibility aliases
 unified_batch_simulation_with_lut = unified_batch_simulation_with_lut_production
 
 # Auto-load LUT at module import (if available)
