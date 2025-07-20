@@ -411,18 +411,6 @@ def _regret_matching_pure(regrets: jnp.ndarray, config: TrainerConfig) -> jnp.nd
     strategy_sums = jnp.sum(strategy, axis=1, keepdims=True)
     strategy = strategy / (strategy_sums + 1e-12)
     
-    # DEBUG: Add debugging to see strategy changes
-    jax.debug.print("🔍 _regret_matching_pure debugging:")
-    jax.debug.print("  regrets magnitude: min={}, max={}, mean={}", 
-                    jnp.min(regrets), jnp.max(regrets), jnp.mean(jnp.abs(regrets)))
-    jax.debug.print("  positive_regrets magnitude: min={}, max={}, sum={}", 
-                    jnp.min(positive_regrets), jnp.max(positive_regrets), jnp.sum(positive_regrets))
-    jax.debug.print("  regret_sums: min={}, max={}, mean={}", 
-                    jnp.min(regret_sums), jnp.max(regret_sums), jnp.mean(regret_sums))
-    jax.debug.print("  strategy magnitude: min={}, max={}, entropy={}", 
-                    jnp.min(strategy), jnp.max(strategy), 
-                    -jnp.mean(jnp.sum(strategy * jnp.log(strategy + 1e-12), axis=1)))
-    
     return strategy
 
 ## CAMBIO CLAVE 3: Asegurar que la LUT se carga como NumPy arrays para mantenerla en CPU
