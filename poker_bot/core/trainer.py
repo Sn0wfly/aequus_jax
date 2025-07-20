@@ -222,10 +222,8 @@ def _update_regrets_for_game_pure(
         rng_key: Random key for MC sampling
         
     Returns:
-        Regret updates para este juego
+        Regret updates para este juego (solo los cambios, no la tabla completa)
     """
-    regret_updates = jnp.zeros_like(regrets)
-    
     # Extraer datos del juego real
     hole_cards_batch = game_results['hole_cards']  # [6, 2]
     community_cards = game_results['final_community']  # [5]
@@ -264,10 +262,23 @@ def _update_regrets_for_game_pure(
         jnp.zeros_like(all_action_regrets)
     )
     
-    # Use proper regret accumulation with jax.scatter_add
-    regret_updates = accumulate_regrets_fixed(
-        regrets, info_set_indices, masked_regrets, sampling_mask
+    # CRITICAL FIX: Return only the regret updates, not the full table
+    # Create a zero table and accumulate only the updates
+    zero_regrets = jnp.zeros_like(regrets)
+    updated_regrets = accumulate_regrets_fixed(
+        zero_regrets, info_set_indices, masked_regrets, sampling_mask
     )
+    
+    # Return only the updates (difference from zero table)
+    regret_updates = updated_regrets - zero_regrets
+    
+    # DEBUG: Add debugging to see what's happening
+    jax.debug.print("🔍 _update_regrets_for_game_pure debugging:")
+    jax.debug.print("  info_set_indices: {}", info_set_indices)
+    jax.debug.print("  sampling_mask: {}", sampling_mask)
+    jax.debug.print("  all_action_regrets magnitude: {}", jnp.sum(jnp.abs(all_action_regrets)))
+    jax.debug.print("  masked_regrets magnitude: {}", jnp.sum(jnp.abs(masked_regrets)))
+    jax.debug.print("  regret_updates magnitude: {}", jnp.sum(jnp.abs(regret_updates)))
     
     return regret_updates
 

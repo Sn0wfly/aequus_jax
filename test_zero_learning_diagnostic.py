@@ -6,7 +6,7 @@ Diagnostic script to identify why regret updates are zero.
 import jax
 import jax.numpy as jnp
 import numpy as np
-from poker_bot.core.trainer import TrainerConfig, _compute_real_cfr_regrets, _update_regrets_for_game_pure
+from poker_bot.core.trainer import TrainerConfig, _compute_real_cfr_regrets, _update_regrets_for_game_pure, _cfr_step_pure
 from poker_bot.core.mccfr_algorithm import mc_sampling_strategy
 from poker_bot.core import full_game_engine as game_engine
 from poker_bot.core.bucketing import compute_info_set_id
