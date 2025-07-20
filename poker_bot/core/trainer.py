@@ -351,8 +351,15 @@ def _cfr_step_pure(
         regrets
     )
     
+    # CRITICAL FIX: Use a very small learning rate and clip accumulated regrets
+    learning_rate = 0.001  # Very small learning rate
+    regret_updates = regret_updates * learning_rate
+    
     # Actualizar regrets con nueva información
     updated_regrets = discounted_regrets + regret_updates
+    
+    # CRITICAL FIX: Clip accumulated regrets to prevent explosion
+    updated_regrets = jnp.clip(updated_regrets, -100.0, 100.0)
     
     # Aplicar poda CFR+: establecer regrets negativos a cero
     if config.use_cfr_plus:
