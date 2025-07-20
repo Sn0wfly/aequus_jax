@@ -185,20 +185,29 @@ def _cfr_step_pure(
         keys, lut_keys, lut_values, lut_table_size
     )
     
-    # Procesar solo el primer juego del batch para mantener el uso de memoria bajo
-    game_payoffs = payoffs[0]  # [6]
-    game_results = {
-        'hole_cards': game_results_batch['hole_cards'][0],  # [6, 2]
-        'final_community': game_results_batch['final_community'][0],  # [5]
-        'final_pot': game_results_batch['final_pot'][0],  # scalar
-        'player_stacks': game_results_batch['player_stacks'][0],  # [6]
-        'player_bets': game_results_batch['player_bets'][0]  # [6]
-    }
+    # ARREGLO 2: Procesar TODOS los juegos del batch usando jax.vmap() para máximo rendimiento
+    # En lugar de desperdiciar 99.2% del batch, procesamos todos los juegos en paralelo
     
-    # Computar actualizaciones de regret usando resultados reales del motor de juego
-    regret_updates = _update_regrets_for_game_pure(
-        regrets, game_results, game_payoffs, config.num_actions
-    )
+    # Función auxiliar para procesar un solo juego del batch
+    def process_single_game(game_idx):
+        game_payoffs_single = payoffs[game_idx]  # [6]
+        game_results_single = {
+            'hole_cards': game_results_batch['hole_cards'][game_idx],  # [6, 2]
+            'final_community': game_results_batch['final_community'][game_idx],  # [5]
+            'final_pot': game_results_batch['final_pot'][game_idx],  # scalar
+            'player_stacks': game_results_batch['player_stacks'][game_idx],  # [6]
+            'player_bets': game_results_batch['player_bets'][game_idx]  # [6]
+        }
+        return _update_regrets_for_game_pure(
+            regrets, game_results_single, game_payoffs_single, config.num_actions
+        )
+    
+    # Usar jax.vmap() para procesar TODOS los juegos del batch simultáneamente
+    batch_indices = jnp.arange(config.batch_size)
+    batch_regret_updates = jax.vmap(process_single_game)(batch_indices)
+    
+    # Promediar las actualizaciones de regret de todos los juegos del batch
+    regret_updates = jnp.mean(batch_regret_updates, axis=0)
     
     # Aplicar descuento de regrets si está habilitado
     discounted_regrets = jnp.where(
@@ -319,6 +328,10 @@ class PokerTrainer:
         # ## CAMBIO CLAVE 3: Load LUT parameters as NumPy arrays during initialization
         self.lut_keys, self.lut_values, self.lut_table_size = load_hand_evaluation_lut(lut_path)
         
+        # Convertir a JAX arrays una sola vez para rendimiento
+        self.lut_keys_jax = jnp.array(self.lut_keys)
+        self.lut_values_jax = jnp.array(self.lut_values)
+        
         # Validate bucketing system on initialization
         if not validate_bucketing_system():
             raise RuntimeError("Bucketing system validation failed")
@@ -365,20 +378,16 @@ class PokerTrainer:
                 # Single CFR step with hybrid optimization
                 iter_start = time.time()
                 
-                ## CAMBIO CLAVE 4: Actualizar la llamada en el método train para pasar los arrays de la LUT
-                # Convertir NumPy arrays a JAX arrays para las funciones JIT
-                lut_keys_jax = jnp.array(self.lut_keys)
-                lut_values_jax = jnp.array(self.lut_values)
-                
+                ## CAMBIO CLAVE 4: Usar arrays pre-convertidos desde __init__ para máximo rendimiento
                 # ¡LA LLAMADA CORRECTA A LA FUNCIÓN PURA CON MOTOR DE JUEGO REAL!
-                # Le pasamos todos los datos que necesita explícitamente, incluyendo la LUT.
+                # Usamos los arrays JAX pre-convertidos para eliminar conversiones repetidas
                 self.regrets, self.strategy = _cfr_step_pure(
-                    self.regrets, 
-                    self.strategy, 
-                    iter_key, 
+                    self.regrets,
+                    self.strategy,
+                    iter_key,
                     self.config,
-                    lut_keys_jax,
-                    lut_values_jax,
+                    self.lut_keys_jax,
+                    self.lut_values_jax,
                     self.lut_table_size
                 )
                 
