@@ -449,6 +449,10 @@ class PokerTrainer:
         # Load hand evaluation LUT
         self.lut_keys, self.lut_values, self.lut_table_size = load_hand_evaluation_lut(lut_path)
         
+        # Convert LUT arrays to JAX for GPU compatibility (for benchmarks)
+        self.lut_keys_jax = jnp.array(self.lut_keys, dtype=jnp.int32)
+        self.lut_values_jax = jnp.array(self.lut_values, dtype=jnp.int32)
+        
         # Initialize regret and strategy tables
         self.regrets = jnp.zeros(
             (config.max_info_sets, config.num_actions),
@@ -508,7 +512,7 @@ class PokerTrainer:
             # Perform CFR step with MC-CFR sampling
             self.regrets, self.strategy = _cfr_step_pure(
                 self.regrets, self.strategy, iter_key, self.config,
-                self.lut_keys, self.lut_values, self.lut_table_size
+                self.lut_keys_jax, self.lut_values_jax, self.lut_table_size
             )
             
             self.iteration += 1
