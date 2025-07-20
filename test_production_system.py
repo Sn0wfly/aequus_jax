@@ -66,7 +66,7 @@ def main():
         trainer = PokerTrainer(config)
         print("   ✅ Trainer initialized successfully")
         print(f"   🧠 Regret tables: {trainer.regrets.shape}")
-        print(f"   📈 Strategy tables: {trainer.strategy_sum.shape}")
+        print(f"   📈 Strategy tables: {trainer.strategy.shape}")
     except Exception as e:
         print(f"   ❌ Error initializing trainer: {e}")
         return False
