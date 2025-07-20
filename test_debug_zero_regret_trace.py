@@ -9,8 +9,9 @@ import jax.numpy as jnp
 import numpy as np
 from poker_bot.core.trainer import PokerTrainer, TrainerConfig
 
-# Enable debug printing
-jax.config.update('jax_debug_prints', True)
+# Enable debug printing (correct JAX syntax)
+jax.config.update('jax_enable_x64', True)  # Enable for better numerical precision
+print("🔧 JAX configured for debugging")
 
 def debug_zero_regret_trace():
     """Run minimal CFR iterations with full debug tracing"""
