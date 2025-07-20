@@ -21,6 +21,55 @@ from .bucketing import compute_info_set_id, validate_bucketing_system
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class TrainerConfig:
+    """Enhanced configuration for CFR training with hybrid CFR+ support"""
+    # Core training parameters
+    batch_size: int = 128
+    num_actions: int = 6  # FOLD, CHECK, CALL, BET, RAISE, ALL_IN
+    max_info_sets: int = 50_000
+    learning_rate: float = 0.01
+    
+    # CFR parameters
+    regret_floor: float = -100.0  # Legacy parameter - will be overridden when CFR+ is enabled
+    regret_ceiling: float = 100.0
+    strategy_threshold: float = 1e-6
+    
+    # Hybrid CFR+ parameters
+    discount_factor: float = 0.9995  # Regret discounting factor (CFR-γ)
+    use_cfr_plus: bool = True        # Enable CFR+ pruning
+    use_regret_discounting: bool = True  # Enable regret discounting
+    
+    # Training control
+    save_interval: int = 1000
+    log_interval: int = 100
+    
+    @classmethod
+    def from_yaml(cls, yaml_path: str) -> 'TrainerConfig':
+        """Load configuration from YAML file with hybrid CFR+ support"""
+        import yaml
+        with open(yaml_path, 'r') as f:
+            config_dict = yaml.safe_load(f) or {}
+        
+        # Create default instance to get fallback values
+        default_config = cls()
+        
+        # Extract all parameters from YAML with proper fallbacks to class defaults
+        return cls(
+            batch_size=config_dict.get('batch_size', default_config.batch_size),
+            num_actions=config_dict.get('num_actions', default_config.num_actions),
+            max_info_sets=config_dict.get('max_info_sets', default_config.max_info_sets),
+            learning_rate=config_dict.get('learning_rate', default_config.learning_rate),
+            regret_floor=config_dict.get('regret_floor', default_config.regret_floor),
+            regret_ceiling=config_dict.get('regret_ceiling', default_config.regret_ceiling),
+            strategy_threshold=config_dict.get('strategy_threshold', default_config.strategy_threshold),
+            save_interval=config_dict.get('save_interval', default_config.save_interval),
+            log_interval=config_dict.get('log_interval', default_config.log_interval),
+            discount_factor=config_dict.get('discount_factor', default_config.discount_factor),
+            use_cfr_plus=config_dict.get('use_cfr_plus', default_config.use_cfr_plus),
+            use_regret_discounting=config_dict.get('use_regret_discounting', default_config.use_regret_discounting),
+        )
+
 # ==============================================================================
 # FUNCIONES PURAS COMPILADAS CON JIT (FUERA DE LA CLASE)
 # ==============================================================================
@@ -229,54 +278,7 @@ def load_hand_evaluation_lut(lut_path: Optional[str] = None) -> tuple[jnp.ndarra
         logger.error(f"❌ Error loading LUT: {e}")
         raise
 
-@dataclass
-class TrainerConfig:
-    """Enhanced configuration for CFR training with hybrid CFR+ support"""
-    # Core training parameters
-    batch_size: int = 128
-    num_actions: int = 6  # FOLD, CHECK, CALL, BET, RAISE, ALL_IN
-    max_info_sets: int = 50_000
-    learning_rate: float = 0.01
-    
-    # CFR parameters
-    regret_floor: float = -100.0  # Legacy parameter - will be overridden when CFR+ is enabled
-    regret_ceiling: float = 100.0
-    strategy_threshold: float = 1e-6
-    
-    # Hybrid CFR+ parameters
-    discount_factor: float = 0.9995  # Regret discounting factor (CFR-γ)
-    use_cfr_plus: bool = True        # Enable CFR+ pruning
-    use_regret_discounting: bool = True  # Enable regret discounting
-    
-    # Training control
-    save_interval: int = 1000
-    log_interval: int = 100
-    
-    @classmethod
-    def from_yaml(cls, yaml_path: str) -> 'TrainerConfig':
-        """Load configuration from YAML file with hybrid CFR+ support"""
-        import yaml
-        with open(yaml_path, 'r') as f:
-            config_dict = yaml.safe_load(f) or {}
-        
-        # Create default instance to get fallback values
-        default_config = cls()
-        
-        # Extract all parameters from YAML with proper fallbacks to class defaults
-        return cls(
-            batch_size=config_dict.get('batch_size', default_config.batch_size),
-            num_actions=config_dict.get('num_actions', default_config.num_actions),
-            max_info_sets=config_dict.get('max_info_sets', default_config.max_info_sets),
-            learning_rate=config_dict.get('learning_rate', default_config.learning_rate),
-            regret_floor=config_dict.get('regret_floor', default_config.regret_floor),
-            regret_ceiling=config_dict.get('regret_ceiling', default_config.regret_ceiling),
-            strategy_threshold=config_dict.get('strategy_threshold', default_config.strategy_threshold),
-            save_interval=config_dict.get('save_interval', default_config.save_interval),
-            log_interval=config_dict.get('log_interval', default_config.log_interval),
-            discount_factor=config_dict.get('discount_factor', default_config.discount_factor),
-            use_cfr_plus=config_dict.get('use_cfr_plus', default_config.use_cfr_plus),
-            use_regret_discounting=config_dict.get('use_regret_discounting', default_config.use_regret_discounting),
-        )
+# TrainerConfig ya está definido al inicio del archivo
 
 class PokerTrainer:
     """
