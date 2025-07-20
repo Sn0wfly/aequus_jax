@@ -89,7 +89,7 @@ def _evaluate_hand_simple_pure(hole_cards: jnp.ndarray) -> jnp.ndarray:
 
 @jax.jit
 def _update_regrets_for_game_gpu_simple_pure(
-    regrets_shape: tuple,
+    regrets: jnp.ndarray,
     game_payoffs: jnp.ndarray,
     hole_cards_batch: jnp.ndarray,
     community_cards: jnp.ndarray,
@@ -99,7 +99,7 @@ def _update_regrets_for_game_gpu_simple_pure(
     Función pura para la actualización de regrets - PURE JAX, sin callbacks.
     
     Args:
-        regrets_shape: Shape de la tabla de regrets
+        regrets: Tabla de regrets actual (para obtener la forma)
         game_payoffs: Payoffs para cada jugador [6]
         hole_cards_batch: Cartas de cada jugador [6, 2]
         community_cards: Cartas comunitarias [5]
@@ -108,7 +108,7 @@ def _update_regrets_for_game_gpu_simple_pure(
     Returns:
         Regret updates para este juego
     """
-    regret_updates = jnp.zeros(regrets_shape)
+    regret_updates = jnp.zeros_like(regrets)
     
     # VECTORIZED GPU OPTIMIZATION: Procesar todos los 6 jugadores simultáneamente
     pot_size_broadcast = jnp.full(6, pot_size)  # [6]
@@ -184,7 +184,7 @@ def _cfr_step_pure(
     
     # Computar actualizaciones de regret usando método existente (sin dependencia LUT)
     regret_updates = _update_regrets_for_game_gpu_simple_pure(
-        regrets.shape, game_payoffs, game_hole_cards, community_cards, final_pot
+        regrets, game_payoffs, game_hole_cards, community_cards, final_pot
     )
     
     # Aplicar descuento de regrets si está habilitado
