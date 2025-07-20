@@ -363,14 +363,27 @@ def test_hand_differentiation():
             current = buckets[idx]
             # Use lax.dynamic_slice for JAX compatibility
             def get_others():
-                if idx == 0:
+                # Use lax.cond for JAX compatibility
+                def case_0():
                     return buckets[1:]
-                elif idx == len(buckets) - 1:
+                
+                def case_last():
                     return buckets[:-1]
-                else:
+                
+                def case_middle():
                     first_part = lax.dynamic_slice(buckets, (0,), (idx,))
                     second_part = lax.dynamic_slice(buckets, (idx + 1,), (len(buckets) - idx - 1,))
                     return jnp.concatenate([first_part, second_part])
+                
+                return lax.cond(
+                    idx == 0,
+                    case_0,
+                    lax.cond(
+                        idx == len(buckets) - 1,
+                        case_last,
+                        case_middle
+                    )
+                )
             
             others = get_others()
             return jnp.all(current != others)
