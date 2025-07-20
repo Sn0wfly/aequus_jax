@@ -102,8 +102,8 @@ class PokerAIValidator:
             # Test basic hand differentiation
             diff_results = test_hand_differentiation()
             
-            if not diff_results['different']:
-                logger.error("❌ AA and 72o map to same bucket!")
+            if not diff_results:
+                logger.error("❌ Hand differentiation test failed!")
                 return False
             
             # Test bucket range validity
