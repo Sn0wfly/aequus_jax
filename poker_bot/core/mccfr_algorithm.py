@@ -75,7 +75,7 @@ def accumulate_regrets_fixed(
     action_regrets: jnp.ndarray,
     sampling_mask: jnp.ndarray
 ) -> jnp.ndarray:
-    """Fix regret accumulation using jax.lax.scatter_add with proper indexing."""
+    """Fix regret accumulation using a simpler approach."""
     
     # Only accumulate for sampled info sets
     masked_indices = jnp.where(sampling_mask, info_set_indices, 0)
@@ -85,23 +85,19 @@ def accumulate_regrets_fixed(
         jnp.zeros_like(action_regrets)
     )
     
-    # Use jax.lax.scatter_add with proper parameters
-    dimension_numbers = jax.lax.ScatterDimensionNumbers(
-        update_window_dims=(1,),
-        inserted_window_dims=(0,),
-        scatter_dims_to_operand_dims=(0,)
+    # Use a simpler approach: manually accumulate regrets
+    def accumulate_single_regret(carry, data):
+        regrets, (idx, regret_update) = carry, data
+        return regrets.at[idx].add(regret_update), None
+    
+    # Process each sampled info set
+    final_regrets, _ = jax.lax.scan(
+        accumulate_single_regret,
+        (regrets, None),
+        (masked_indices, masked_regrets)
     )
     
-    updated_regrets = jax.lax.scatter_add(
-        regrets,
-        masked_indices,
-        masked_regrets,
-        dimension_numbers,
-        indices_are_sorted=False,
-        unique_indices=False
-    )
-    
-    return updated_regrets
+    return final_regrets
 
 @jax.jit
 def calculate_strategy(regrets: jnp.ndarray) -> jnp.ndarray:
@@ -135,22 +131,19 @@ def update_strategy(
         jnp.zeros_like(action_values)
     )
     
-    dimension_numbers = jax.lax.ScatterDimensionNumbers(
-        update_window_dims=(1,),
-        inserted_window_dims=(0,),
-        scatter_dims_to_operand_dims=(0,)
+    # Use a simpler approach: manually update strategy
+    def update_single_strategy(carry, data):
+        strategy, (idx, strategy_update) = carry, data
+        return strategy.at[idx].set(strategy_update), None
+    
+    # Process each sampled info set
+    final_strategy, _ = jax.lax.scan(
+        update_single_strategy,
+        (strategy, None),
+        (masked_indices, masked_strategy)
     )
     
-    updated_strategy = jax.lax.scatter_add(
-        strategy,
-        masked_indices,
-        masked_strategy,
-        dimension_numbers,
-        indices_are_sorted=False,
-        unique_indices=False
-    )
-    
-    return updated_strategy
+    return final_strategy
 
 @jax.jit
 def apply_cfr_plus_discounting(regrets: jnp.ndarray, iteration: int) -> jnp.ndarray:

@@ -413,7 +413,7 @@ def validate_bucketing_system():
         buckets = []
         for hole_cards, hand_name in test_hands:
             bucket = compute_info_set_id(hole_cards, community_cards, player_idx, pot_size, stack_size)
-            buckets.append(bucket)
+            buckets.append(int(bucket))  # Convert to Python int
         
         # Check that we have at least 3 different buckets
         unique_buckets = len(set(buckets))
@@ -425,7 +425,7 @@ def validate_bucketing_system():
         flop_cards = jnp.array([0, 1, 2, -1, -1])  # Flop
         flop_bucket = compute_info_set_id(hole_cards, flop_cards, player_idx, pot_size, stack_size)
         
-        if flop_bucket == info_set_id:
+        if int(flop_bucket) == int(info_set_id):
             logger.error("❌ Postflop bucket same as preflop bucket")
             return False
         
