@@ -87,28 +87,30 @@ def _evaluate_hand_simple_pure(hole_cards: jnp.ndarray) -> jnp.ndarray:
     
     return rank_value + pair_bonus + suited_bonus
 
+## CAMBIO CLAVE 1: Actualizar _update_regrets_for_game_pure para trabajar con resultados reales del motor de juego
 @jax.jit
-def _update_regrets_for_game_gpu_simple_pure(
+def _update_regrets_for_game_pure(
     regrets: jnp.ndarray,
-    game_payoffs: jnp.ndarray,
-    hole_cards_batch: jnp.ndarray,
-    community_cards: jnp.ndarray,
-    pot_size: jnp.ndarray
+    game_results: Dict[str, jnp.ndarray],
+    game_payoffs: jnp.ndarray
 ) -> jnp.ndarray:
     """
-    Función pura para la actualización de regrets - PURE JAX, sin callbacks.
+    Función pura para la actualización de regrets usando resultados reales del motor de juego.
     
     Args:
-        regrets: Tabla de regrets actual (para obtener la forma)
+        regrets: Tabla de regrets actual
+        game_results: Resultados del juego real del motor de juego
         game_payoffs: Payoffs para cada jugador [6]
-        hole_cards_batch: Cartas de cada jugador [6, 2]
-        community_cards: Cartas comunitarias [5]
-        pot_size: Tamaño final del pot (scalar)
         
     Returns:
         Regret updates para este juego
     """
     regret_updates = jnp.zeros_like(regrets)
+    
+    # Extraer datos del juego real
+    hole_cards_batch = game_results['hole_cards']  # [6, 2]
+    community_cards = game_results['final_community']  # [5]
+    pot_size = game_results['final_pot']  # scalar
     
     # VECTORIZED GPU OPTIMIZATION: Procesar todos los 6 jugadores simultáneamente
     pot_size_broadcast = jnp.full(6, pot_size)  # [6]
@@ -122,11 +124,11 @@ def _update_regrets_for_game_gpu_simple_pure(
         in_axes=(0, 0, 0)
     )(hole_cards_batch, player_indices, pot_size_broadcast)
     
-    # Paso 2: Evaluación vectorizada de manos
+    # Paso 2: Evaluación vectorizada de manos usando datos reales
     hand_strengths = jax.vmap(_evaluate_hand_simple_pure)(hole_cards_batch)
     normalized_strengths = hand_strengths / 10000.0
     
-    # Paso 3: Computación vectorizada de regrets
+    # Paso 3: Computación vectorizada de regrets usando payoffs reales
     def compute_regret_vector(strength, payoff):
         return jnp.where(
             strength > 0.7,
@@ -145,46 +147,43 @@ def _update_regrets_for_game_gpu_simple_pure(
     
     return regret_updates
 
+## CAMBIO CLAVE 2: Modificar _cfr_step_pure para aceptar la LUT y llamar al game_engine.unified_batch_simulation_with_lut
 @partial(jax.jit, static_argnames=("config",))
 def _cfr_step_pure(
     regrets: jnp.ndarray,
     strategy: jnp.ndarray,
     key: jax.Array,
-    config: TrainerConfig
+    config: TrainerConfig,
+    lut_keys: jnp.ndarray,
+    lut_values: jnp.ndarray, 
+    lut_table_size: int
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
-    Paso de entrenamiento CFR+ completamente puro. No captura 'self'.
-    Recibe la configuración como un argumento estático.
+    Paso de entrenamiento CFR+ completamente puro usando el motor de juego real.
+    Recibe la LUT como parámetros para integración con motor de juego real.
     """
-    # Generar datos sintéticos de juego en lugar de simulaciones completas para evitar problemas de memoria LUT
+    # Generar keys para simulaciones reales
     keys = jax.random.split(key, config.batch_size)
     
-    # Generar cartas sintéticas para los jugadores
-    def generate_game_data(game_key):
-        # Generar hole cards para 6 jugadores (2 cartas cada uno)
-        hole_cards = jax.random.choice(game_key, 52, (6, 2), replace=False)
-        # Generar payoffs sintéticos basados en fuerza simple de mano
-        payoffs = jax.vmap(_evaluate_hand_simple_pure)(hole_cards) / 1000.0
-        # Agregar ruido para hacerlo realista
-        noise_key, _ = jax.random.split(game_key)
-        payoffs = payoffs + jax.random.normal(noise_key, (6,)) * 10.0
-        return hole_cards, payoffs
+    # ## CAMBIO CLAVE 2: Usar el motor de juego real con LUT
+    # Llamar al motor de juego unificado con LUT
+    payoffs, histories, game_results_batch = game_engine.unified_batch_simulation_with_lut(
+        keys, lut_keys, lut_values, lut_table_size
+    )
     
-    # Generar batch de juegos sintéticos
-    all_hole_cards, all_payoffs = jax.vmap(generate_game_data)(keys)
+    # Procesar solo el primer juego del batch para mantener el uso de memoria bajo
+    game_payoffs = payoffs[0]  # [6]
+    game_results = {
+        'hole_cards': game_results_batch['hole_cards'][0],  # [6, 2]
+        'final_community': game_results_batch['final_community'][0],  # [5]
+        'final_pot': game_results_batch['final_pot'][0],  # scalar
+        'player_stacks': game_results_batch['player_stacks'][0],  # [6]
+        'player_bets': game_results_batch['player_bets'][0]  # [6]
+    }
     
-    # Procesar solo el primer juego para mantener el uso de memoria bajo
-    game_hole_cards = all_hole_cards[0]  # [6, 2]
-    game_payoffs = all_payoffs[0]  # [6]
-    
-    # Generar cartas comunitarias mock y pot
-    community_key = jax.random.fold_in(key, 1000)
-    community_cards = jax.random.choice(community_key, 52, (5,), replace=False)
-    final_pot = jnp.float32(100.0)  # Tamaño de pot fijo para simplicidad
-    
-    # Computar actualizaciones de regret usando método existente (sin dependencia LUT)
-    regret_updates = _update_regrets_for_game_gpu_simple_pure(
-        regrets, game_payoffs, game_hole_cards, community_cards, final_pot
+    # Computar actualizaciones de regret usando resultados reales del motor de juego
+    regret_updates = _update_regrets_for_game_pure(
+        regrets, game_results, game_payoffs
     )
     
     # Aplicar descuento de regrets si está habilitado
@@ -233,16 +232,17 @@ def _regret_matching_pure(regrets: jnp.ndarray, config: TrainerConfig) -> jnp.nd
     
     return strategy
 
-# ---------- LUT Loading Utility ----------
-def load_hand_evaluation_lut(lut_path: Optional[str] = None) -> tuple[jnp.ndarray, jnp.ndarray, int]:
+## CAMBIO CLAVE 3: Asegurar que la LUT se carga como NumPy arrays para mantenerla en CPU
+def load_hand_evaluation_lut(lut_path: Optional[str] = None) -> tuple[np.ndarray, np.ndarray, int]:
     """
     Load hand evaluation lookup table for fast hand strength calculation.
+    ## CAMBIO CLAVE 3: Retorna NumPy arrays para mantener la LUT en CPU
     
     Args:
         lut_path: Optional path to LUT file. If None, uses default location.
         
     Returns:
-        Tuple of (lut_keys, lut_values, lut_table_size) for hand evaluation
+        Tuple of (lut_keys, lut_values, lut_table_size) as NumPy arrays for CPU
         
     Raises:
         FileNotFoundError: If LUT file is not found
@@ -260,18 +260,20 @@ def load_hand_evaluation_lut(lut_path: Optional[str] = None) -> tuple[jnp.ndarra
         if not all(key in lut_data for key in required_keys):
             raise ValueError(f"Invalid LUT format: missing required keys {required_keys}")
          
-        lut_keys = jnp.array(lut_data['hash_keys'], dtype=jnp.int32)
-        lut_values = jnp.array(lut_data['hash_values'], dtype=jnp.int32)
+        # ## CAMBIO CLAVE 3: Cargar como NumPy arrays para mantener en CPU
+        lut_keys = np.array(lut_data['hash_keys'], dtype=np.int32)
+        lut_values = np.array(lut_data['hash_values'], dtype=np.int32)
         table_size = int(lut_data['table_size'])
         
         logger.info(f"✅ LUT loaded successfully: {len(lut_keys)} entries, table_size={table_size}")
+        logger.info(f"   LUT arrays kept in CPU memory as NumPy arrays")
         return lut_keys, lut_values, table_size
         
     except FileNotFoundError:
         logger.warning(f"⚠️ LUT file not found at {lut_path}, using fallback evaluation")
-        # Return dummy values for fallback
-        lut_keys = jnp.array([0, 1, 2, 3, 4, 5], dtype=jnp.int32)
-        lut_values = jnp.array([100, 200, 300, 400, 500, 600], dtype=jnp.int32)
+        # Return dummy values for fallback as NumPy arrays
+        lut_keys = np.array([0, 1, 2, 3, 4, 5], dtype=np.int32)
+        lut_values = np.array([100, 200, 300, 400, 500, 600], dtype=np.int32)
         return lut_keys, lut_values, 6
         
     except Exception as e:
@@ -300,22 +302,22 @@ class PokerTrainer:
             dtype=jnp.float32
         ) / config.num_actions
         
-        # Load LUT parameters during initialization
+        # ## CAMBIO CLAVE 3: Load LUT parameters as NumPy arrays during initialization
         self.lut_keys, self.lut_values, self.lut_table_size = load_hand_evaluation_lut(lut_path)
         
         # Validate bucketing system on initialization
         if not validate_bucketing_system():
             raise RuntimeError("Bucketing system validation failed")
         
-        logger.info(f"🎯 PokerTrainer initialized with hybrid CFR+")
+        logger.info(f"🎯 PokerTrainer initialized with hybrid CFR+ and real game engine")
         logger.info(f"   Config: {config.batch_size} batch, {config.max_info_sets:,} info sets")
         logger.info(f"   CFR+: {config.use_cfr_plus}, Discount: {config.discount_factor}")
-        logger.info(f"   LUT: {self.lut_table_size} entries loaded")
+        logger.info(f"   LUT: {self.lut_table_size} entries loaded as NumPy arrays (CPU)")
         logger.info(f"   Shapes: regrets{self.regrets.shape}, strategy{self.strategy.shape}")
 
     def train(self, num_iterations: int, save_path: str) -> Dict[str, Any]:
         """
-        Main training loop with hybrid CFR+ optimization.
+        Main training loop with hybrid CFR+ optimization and real game engine.
         
         Args:
             num_iterations: Number of CFR iterations
@@ -324,7 +326,7 @@ class PokerTrainer:
         Returns:
             Training statistics including hybrid CFR+ metrics
         """
-        logger.info(f"🚀 Starting hybrid CFR+ training: {num_iterations:,} iterations")
+        logger.info(f"🚀 Starting hybrid CFR+ training with real game engine: {num_iterations:,} iterations")
         logger.info(f"   Save path: {save_path}")
         
         key = jax.random.PRNGKey(42)
@@ -349,11 +351,21 @@ class PokerTrainer:
                 # Single CFR step with hybrid optimization
                 iter_start = time.time()
                 
-                # ¡LA LLAMADA CORRECTA A LA FUNCIÓN PURA!
-                # Le pasamos todos los datos que necesita explícitamente.
-                # Ya no hay ninguna captura implícita de 'self'.
+                ## CAMBIO CLAVE 4: Actualizar la llamada en el método train para pasar los arrays de la LUT
+                # Convertir NumPy arrays a JAX arrays para las funciones JIT
+                lut_keys_jax = jnp.array(self.lut_keys)
+                lut_values_jax = jnp.array(self.lut_values)
+                
+                # ¡LA LLAMADA CORRECTA A LA FUNCIÓN PURA CON MOTOR DE JUEGO REAL!
+                # Le pasamos todos los datos que necesita explícitamente, incluyendo la LUT.
                 self.regrets, self.strategy = _cfr_step_pure(
-                    self.regrets, self.strategy, iter_key, self.config
+                    self.regrets, 
+                    self.strategy, 
+                    iter_key, 
+                    self.config,
+                    lut_keys_jax,
+                    lut_values_jax,
+                    self.lut_table_size
                 )
                 
                 # Ensure computation completes
@@ -366,7 +378,7 @@ class PokerTrainer:
                     regret_sum = float(jnp.sum(jnp.abs(self.regrets)))
                     logger.info(
                         f"Progress: {progress:.1f}% ({i:,}/{num_iterations:,}) "
-                        f"| {iter_time:.2f}s | Regret sum: {regret_sum:.1e}"
+                        f"| {iter_time:.2f}s | Regret sum: {regret_sum:.1e} | Real Game Engine"
                     )
                 
                 # Periodic saves
@@ -388,7 +400,7 @@ class PokerTrainer:
             final_path = f"{save_path}_final.pkl"
             self.save_model(final_path)
             
-            logger.info(f"✅ Hybrid CFR+ training completed successfully")
+            logger.info(f"✅ Hybrid CFR+ training with real game engine completed successfully")
             logger.info(f"   Time: {total_time:.1f}s ({stats['iterations_per_second']:.1f} iter/s)")
             logger.info(f"   Final model: {final_path}")
             
@@ -537,7 +549,7 @@ def create_trainer(config_path: Optional[str] = None) -> PokerTrainer:
         config_path: Path to YAML config file
         
     Returns:
-        Configured PokerTrainer with hybrid CFR+ support
+        Configured PokerTrainer with hybrid CFR+ support and real game engine
     """
     if config_path:
         config = TrainerConfig.from_yaml(config_path)
