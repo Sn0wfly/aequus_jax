@@ -75,30 +75,33 @@ def accumulate_regrets_fixed(
     action_regrets: jnp.ndarray,
     sampling_mask: jnp.ndarray
 ) -> jnp.ndarray:
-    """Fix regret accumulation using a simpler approach."""
+    """Fix regret accumulation using a direct approach."""
     
-    # Only accumulate for sampled info sets
-    masked_indices = jnp.where(sampling_mask, info_set_indices, 0)
-    masked_regrets = jnp.where(
-        sampling_mask[:, None], 
-        action_regrets, 
-        jnp.zeros_like(action_regrets)
+    # Only process sampled info sets
+    valid_mask = sampling_mask & (info_set_indices >= 0) & (info_set_indices < regrets.shape[0])
+    
+    # Get valid indices and regrets
+    valid_indices = jnp.where(valid_mask, info_set_indices, 0)
+    valid_regrets = jnp.where(valid_mask[:, None], action_regrets, jnp.zeros_like(action_regrets))
+    
+    # Use scatter_add for direct accumulation
+    dimension_numbers = jax.lax.ScatterDimensionNumbers(
+        update_window_dims=(1,),
+        inserted_window_dims=(0,),
+        scatter_dims_to_operand_dims=(0,)
     )
     
-    # Use a simpler approach: manually accumulate regrets
-    def accumulate_single_regret(carry, data):
-        regrets, (idx, regret_update) = carry, data
-        new_regrets = regrets.at[idx].add(regret_update)
-        return new_regrets, None
-    
-    # Process each sampled info set
-    final_regrets, _ = jax.lax.scan(
-        accumulate_single_regret,
-        regrets,  # Initial carry state
-        (masked_indices, masked_regrets)
+    # Accumulate regrets directly
+    updated_regrets = jax.lax.scatter_add(
+        regrets,
+        valid_indices,
+        valid_regrets,
+        dimension_numbers,
+        indices_are_sorted=False,
+        unique_indices=False
     )
     
-    return final_regrets
+    return updated_regrets
 
 @jax.jit
 def calculate_strategy(regrets: jnp.ndarray) -> jnp.ndarray:
