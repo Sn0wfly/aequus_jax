@@ -20,8 +20,7 @@ import os
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from poker_bot.core.trainer import PokerTrainer, TrainerConfig
-from poker_bot.evaluator import load_hand_evaluation_lut
+from poker_bot.core.trainer import PokerTrainer, TrainerConfig, load_hand_evaluation_lut
 
 def main():
     print("🚀 PRODUCTION SYSTEM TEST - CFR+ Real Poker Training")
