@@ -140,12 +140,12 @@ def test_trainer_instantiation():
         return False, None
     
     try:
-        # Crear configuración básica
+        # Crear configuración básica - CORREGIDO: num_iterations no es parámetro del constructor
         config = TrainerConfig(
             batch_size=2,  # Muy pequeño para tests
-            num_iterations=1,
             max_info_sets=1000,
-            save_interval=1000
+            save_interval=1000,
+            log_interval=100
         )
         print_result("TrainerConfig creation", True, f"batch_size={config.batch_size}")
     except Exception as e:
