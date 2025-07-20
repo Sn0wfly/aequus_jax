@@ -84,6 +84,14 @@ def accumulate_regrets_fixed(
     valid_indices = jnp.where(valid_mask, info_set_indices, 0)
     valid_regrets = jnp.where(valid_mask[:, None], action_regrets, jnp.zeros_like(action_regrets))
     
+    # DEBUG: Add debugging to see what's happening
+    jax.debug.print("🔍 accumulate_regrets_fixed debugging:")
+    jax.debug.print("  regrets shape: {}", regrets.shape)
+    jax.debug.print("  info_set_indices: {}", info_set_indices)
+    jax.debug.print("  valid_mask: {}", valid_mask)
+    jax.debug.print("  valid_indices: {}", valid_indices)
+    jax.debug.print("  valid_regrets magnitude: {}", jnp.sum(jnp.abs(valid_regrets)))
+    
     # CRITICAL FIX: Use scatter_add with proper dimension_numbers to avoid collisions
     # This ensures multiple updates to the same info_set are properly accumulated
     dimension_numbers = jax.lax.ScatterDimensionNumbers(
@@ -101,6 +109,10 @@ def accumulate_regrets_fixed(
         indices_are_sorted=False,
         unique_indices=False  # Allow multiple updates to same index
     )
+    
+    # DEBUG: Check if updates were applied
+    jax.debug.print("  updated_regrets magnitude: {}", jnp.sum(jnp.abs(updated_regrets)))
+    jax.debug.print("  regret change: {}", jnp.sum(jnp.abs(updated_regrets - regrets)))
     
     return updated_regrets
 
