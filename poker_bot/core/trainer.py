@@ -88,11 +88,12 @@ def _evaluate_hand_simple_pure(hole_cards: jnp.ndarray) -> jnp.ndarray:
     return rank_value + pair_bonus + suited_bonus
 
 ## CAMBIO CLAVE 1: Actualizar _update_regrets_for_game_pure para trabajar con resultados reales del motor de juego
-@jax.jit
+@partial(jax.jit, static_argnames=("num_actions",))
 def _update_regrets_for_game_pure(
     regrets: jnp.ndarray,
     game_results: Dict[str, jnp.ndarray],
-    game_payoffs: jnp.ndarray
+    game_payoffs: jnp.ndarray,
+    num_actions: int
 ) -> jnp.ndarray:
     """
     Función pura para la actualización de regrets usando resultados reales del motor de juego.
@@ -101,6 +102,7 @@ def _update_regrets_for_game_pure(
         regrets: Tabla de regrets actual
         game_results: Resultados del juego real del motor de juego
         game_payoffs: Payoffs para cada jugador [6]
+        num_actions: Número de acciones configurado dinámicamente
         
     Returns:
         Regret updates para este juego
@@ -128,17 +130,29 @@ def _update_regrets_for_game_pure(
     hand_strengths = jax.vmap(_evaluate_hand_simple_pure)(hole_cards_batch)
     normalized_strengths = hand_strengths / 10000.0
     
-    # Paso 3: Computación vectorizada de regrets usando payoffs reales
+    # Paso 3: Computación vectorizada de regrets usando payoffs reales - DINÁMICO
     def compute_regret_vector(strength, payoff):
-        return jnp.where(
-            strength > 0.7,
-            payoff * jnp.array([0.0, 0.0, 0.1, 0.5, 0.8, 0.2]),  # Fuerte: bet/raise
-            jnp.where(
-                strength > 0.3,
-                payoff * jnp.array([0.1, 0.2, 0.3, 0.1, 0.0, 0.0]),  # Medio: mixed
-                payoff * jnp.array([0.0, 0.3, 0.2, 0.0, 0.0, 0.0])   # Débil: fold/check
+        # Crear arrays de regret dinámicamente basados en num_actions
+        if num_actions == 3:  # FOLD, CALL, BET
+            return jnp.where(
+                strength > 0.7,
+                payoff * jnp.array([0.0, 0.1, 0.8]),  # Fuerte: bet
+                jnp.where(
+                    strength > 0.3,
+                    payoff * jnp.array([0.1, 0.3, 0.1]),  # Medio: mixed
+                    payoff * jnp.array([0.0, 0.3, 0.0])   # Débil: call
+                )
             )
-        )
+        else:  # num_actions == 6: FOLD, CHECK, CALL, BET, RAISE, ALL_IN
+            return jnp.where(
+                strength > 0.7,
+                payoff * jnp.array([0.0, 0.0, 0.1, 0.5, 0.8, 0.2]),  # Fuerte: bet/raise
+                jnp.where(
+                    strength > 0.3,
+                    payoff * jnp.array([0.1, 0.2, 0.3, 0.1, 0.0, 0.0]),  # Medio: mixed
+                    payoff * jnp.array([0.0, 0.3, 0.2, 0.0, 0.0, 0.0])   # Débil: fold/check
+                )
+            )
     
     all_action_regrets = jax.vmap(compute_regret_vector)(normalized_strengths, game_payoffs)
     
@@ -183,7 +197,7 @@ def _cfr_step_pure(
     
     # Computar actualizaciones de regret usando resultados reales del motor de juego
     regret_updates = _update_regrets_for_game_pure(
-        regrets, game_results, game_payoffs
+        regrets, game_results, game_payoffs, config.num_actions
     )
     
     # Aplicar descuento de regrets si está habilitado
