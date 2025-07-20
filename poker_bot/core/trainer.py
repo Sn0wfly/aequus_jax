@@ -42,7 +42,7 @@ class TrainerConfig:
     use_regret_discounting: bool = True  # Enable regret discounting
     
     # MC-CFR parameters
-    mc_sampling_rate: float = 0.15  # Process 15% of learning opportunities
+    mc_sampling_rate: float = 0.50  # Process 50% of learning opportunities (was 0.15)
     mc_exploration_epsilon: float = 0.6  # 60% exploration, 40% exploitation
     mc_min_samples_per_info_set: int = 100
     mc_max_samples_per_info_set: int = 10000
@@ -351,15 +351,15 @@ def _cfr_step_pure(
         regrets
     )
     
-    # CRITICAL FIX: Use a very small learning rate and clip accumulated regrets
-    learning_rate = 0.001  # Very small learning rate
+    # CRITICAL FIX: Use a reasonable learning rate instead of ultraconservative
+    learning_rate = 0.1  # Increased from 0.001 for faster learning
     regret_updates = regret_updates * learning_rate
     
     # Actualizar regrets con nueva información
     updated_regrets = discounted_regrets + regret_updates
     
-    # CRITICAL FIX: Clip accumulated regrets to prevent explosion
-    updated_regrets = jnp.clip(updated_regrets, -100.0, 100.0)
+    # CRITICAL FIX: Use reasonable clipping instead of ultraconservative
+    updated_regrets = jnp.clip(updated_regrets, -10.0, 10.0)  # Increased from ±0.05
     
     # Aplicar poda CFR+: establecer regrets negativos a cero
     if config.use_cfr_plus:
