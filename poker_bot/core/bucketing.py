@@ -355,9 +355,20 @@ def test_hand_differentiation():
         jnp.stack([aa, kk, aks, aqs, ako, aqo])
     )
     
-    # All buckets should be different
-    unique_buckets = jnp.unique(buckets)
-    return jnp.array_equal(unique_buckets.size, buckets.size)
+    # Check that all buckets are different by comparing each pair
+    # This is JAX-compatible and doesn't use jnp.unique
+    def check_unique(buckets):
+        # Compare each bucket with all others
+        def compare_with_others(idx):
+            current = buckets[idx]
+            others = jnp.concatenate([buckets[:idx], buckets[idx+1:]])
+            return jnp.all(current != others)
+        
+        # Check uniqueness for each bucket
+        uniqueness_checks = jax.vmap(compare_with_others)(jnp.arange(len(buckets)))
+        return jnp.all(uniqueness_checks)
+    
+    return check_unique(buckets)
 
 def validate_bucketing_system():
     """

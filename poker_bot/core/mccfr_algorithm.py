@@ -75,7 +75,7 @@ def accumulate_regrets_fixed(
     action_regrets: jnp.ndarray,
     sampling_mask: jnp.ndarray
 ) -> jnp.ndarray:
-    """Fix regret accumulation using jax.scatter_add with proper indexing."""
+    """Fix regret accumulation using jax.lax.scatter_add with proper indexing."""
     
     # Only accumulate for sampled info sets
     masked_indices = jnp.where(sampling_mask, info_set_indices, 0)
@@ -85,8 +85,8 @@ def accumulate_regrets_fixed(
         jnp.zeros_like(action_regrets)
     )
     
-    # Use jax.scatter_add with proper dtype handling
-    updated_regrets = jax.scatter_add(
+    # Use jax.lax.scatter_add with proper dtype handling
+    updated_regrets = jax.lax.scatter_add(
         regrets,
         masked_indices,
         masked_regrets,
@@ -128,7 +128,7 @@ def update_strategy(
         jnp.zeros_like(action_values)
     )
     
-    updated_strategy = jax.scatter_add(
+    updated_strategy = jax.lax.scatter_add(
         strategy,
         masked_indices,
         masked_strategy,
