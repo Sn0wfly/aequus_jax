@@ -26,7 +26,8 @@ def test_sampling_rate_increase():
     print(f"  Improvement: {(new_rate/old_rate - 1)*100:.1f}% more data")
     
     # Test actual sampling
-    regrets = jnp.zeros((1000, 9))
+    config = TrainerConfig()
+    regrets = jnp.zeros((config.max_info_sets, 9))  # Use config.max_info_sets
     info_set_indices = jnp.arange(100)
     rng_key = jax.random.PRNGKey(42)
     
@@ -94,8 +95,8 @@ def test_learning_rate_increase():
     
     # Test that the learning rate is actually used in training
     config = TrainerConfig()
-    regrets = jnp.zeros((1000, 9))
-    strategy = jnp.ones((1000, 9)) / 9
+    regrets = jnp.zeros((config.max_info_sets, 9))  # Use config.max_info_sets instead of 1000
+    strategy = jnp.ones((config.max_info_sets, 9)) / 9  # Use config.max_info_sets
     key = jax.random.PRNGKey(42)
     
     # Create dummy LUT for testing
