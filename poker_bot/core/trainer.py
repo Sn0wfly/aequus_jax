@@ -2,7 +2,7 @@
 
 """
 Clean CFR Trainer for Poker AI with Hybrid CFR+ Implementation
-JAX-native implementation combining regret discounting and CFR+ for enhanced performance
+JAX-native implementation combining regret discounting and CFR+ for enhanced performance!
 """
 
 import jax
