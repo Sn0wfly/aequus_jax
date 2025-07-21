@@ -30,3 +30,8 @@ if num_info_sets_with_positive > 0:
     avg_entropy = jnp.mean(entropies)
     print(f"Avg strategy entropy in positive regret info sets: {avg_entropy:.4f}")
     print(f"Min/Max entropy in positive areas: {jnp.min(entropies):.4f}/{jnp.max(entropies):.4f}")
+
+print(f"Trainer config MC sampling rate: {trainer.config.mc_sampling_rate}")
+print(f"Current regret shape: {trainer.regrets.shape}")
+print(f"Model iteration: {trainer.iteration}")
+print(f"Trainer batch size: {trainer.config.batch_size}")
