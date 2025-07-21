@@ -196,6 +196,8 @@ def _compute_real_cfr_regrets(
     # Compute actual value (weighted average of action values by current strategy)
     actual_value = jnp.sum(action_values * current_strategy)
     jax.debug.print("🔍 actual_value: {}", actual_value)
+    jax.debug.print("🔍 current_strategy: min={}, max={}, mean={}", 
+                    jnp.min(current_strategy), jnp.max(current_strategy), jnp.mean(current_strategy))
 
     # Compute regrets: counterfactual_value - actual_value
     regrets = action_values - actual_value
