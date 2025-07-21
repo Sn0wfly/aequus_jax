@@ -188,13 +188,19 @@ def _compute_real_cfr_regrets(
     
     # VERY CONSERVATIVE CLIPPING
     action_values = jnp.clip(action_values, -0.1, 0.1)
-    
+
+    # DEBUG: Print action values
+    jax.debug.print("🔍 action_values: min={}, max={}, mean={}", 
+                    jnp.min(action_values), jnp.max(action_values), jnp.mean(action_values))
+
     # Compute actual value (weighted average of action values by current strategy)
     actual_value = jnp.sum(action_values * current_strategy)
-    
+    jax.debug.print("🔍 actual_value: {}", actual_value)
+
     # Compute regrets: counterfactual_value - actual_value
     regrets = action_values - actual_value
-    
+    jax.debug.print("🔍 regrets: min={}, max={}", jnp.min(regrets), jnp.max(regrets))
+
     # VERY CONSERVATIVE CLIPPING
     regrets = jnp.clip(regrets, -0.05, 0.05)
     
