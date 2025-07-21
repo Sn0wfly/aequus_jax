@@ -278,7 +278,7 @@ def _update_regrets_for_game_pure(
     #jax.debug.print("  sampling_mask: {}", sampling_mask)
     #jax.debug.print("  all_action_regrets magnitude: {}", jnp.sum(jnp.abs(all_action_regrets)))
     #jax.debug.print("  masked_regrets magnitude: {}", jnp.sum(jnp.abs(masked_regrets)))
-    #jax.debug.print("  regret_updates magnitude: {}", jnp.sum(jnp.abs(regret_updates)))
+    jax.debug.print("  regret_updates magnitude: {}", jnp.sum(jnp.abs(regret_updates)))
     
     return regret_updates
 
@@ -344,8 +344,8 @@ def _cfr_step_pure(
     # SAFEGUARD: Validate regret magnitude to prevent zero-learning bugs
     regret_magnitude = jnp.sum(jnp.abs(regret_updates))
     #jax.debug.print("🛡️  SAFEGUARD: Regret magnitude validation:")
-    #jax.debug.print("  regret_updates magnitude: min={}, max={}, total={}",
-    #                jnp.min(regret_updates), jnp.max(regret_updates), regret_magnitude)
+    jax.debug.print("  regret_updates magnitude: min={}, max={}, total={}",
+                    jnp.min(regret_updates), jnp.max(regret_updates), regret_magnitude)
     
     # Critical check: Warn if regret updates are suspiciously small
     #jax.debug.print("⚠️  Zero-learning check: magnitude < 0.001? {}", regret_magnitude < 0.001)
