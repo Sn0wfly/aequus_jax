@@ -141,7 +141,7 @@ def _compute_real_cfr_regrets(
     
     # MUCH MORE CONSERVATIVE NORMALIZATION
     # Use a very small scale to prevent explosion
-    scale_factor = 1.0  # Very small scale
+    scale_factor = 8.0  # Very small scale
     
     # Define action values based on hand strength (CONSERVATIVE SCALE)
     if num_actions == 9:  # Full 9-action NLHE system
