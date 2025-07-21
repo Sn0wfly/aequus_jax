@@ -141,7 +141,7 @@ def _compute_real_cfr_regrets(
     
     # MUCH MORE CONSERVATIVE NORMALIZATION
     # Use a very small scale to prevent explosion
-    scale_factor = 0.5  # Very small scale
+    scale_factor = 1.0  # Very small scale
     
     # Define action values based on hand strength (CONSERVATIVE SCALE)
     if num_actions == 9:  # Full 9-action NLHE system
@@ -190,18 +190,18 @@ def _compute_real_cfr_regrets(
     action_values = jnp.clip(action_values, -0.1, 0.1)
 
     # DEBUG: Print action values
-    jax.debug.print("🔍 action_values: min={}, max={}, mean={}", 
-                    jnp.min(action_values), jnp.max(action_values), jnp.mean(action_values))
+    #jax.debug.print("🔍 action_values: min={}, max={}, mean={}", 
+    #                jnp.min(action_values), jnp.max(action_values), jnp.mean(action_values))
 
     # Compute actual value (weighted average of action values by current strategy)
     actual_value = jnp.sum(action_values * current_strategy)
-    jax.debug.print("🔍 actual_value: {}", actual_value)
-    jax.debug.print("🔍 current_strategy: min={}, max={}, mean={}", 
-                    jnp.min(current_strategy), jnp.max(current_strategy), jnp.mean(current_strategy))
+    #jax.debug.print("🔍 actual_value: {}", actual_value)
+    #jax.debug.print("🔍 current_strategy: min={}, max={}, mean={}", 
+    #                jnp.min(current_strategy), jnp.max(current_strategy), jnp.mean(current_strategy))
 
     # Compute regrets: counterfactual_value - actual_value
     regrets = action_values - actual_value
-    jax.debug.print("🔍 regrets: min={}, max={}", jnp.min(regrets), jnp.max(regrets))
+    #jax.debug.print("🔍 regrets: min={}, max={}", jnp.min(regrets), jnp.max(regrets))
 
     # VERY CONSERVATIVE CLIPPING
     regrets = jnp.clip(regrets, -0.05, 0.05)
@@ -286,7 +286,7 @@ def _update_regrets_for_game_pure(
     #jax.debug.print("  sampling_mask: {}", sampling_mask)
     #jax.debug.print("  all_action_regrets magnitude: {}", jnp.sum(jnp.abs(all_action_regrets)))
     #jax.debug.print("  masked_regrets magnitude: {}", jnp.sum(jnp.abs(masked_regrets)))
-    jax.debug.print("  regret_updates magnitude: {}", jnp.sum(jnp.abs(regret_updates)))
+    #jax.debug.print("  regret_updates magnitude: {}", jnp.sum(jnp.abs(regret_updates)))
     
     return regret_updates
 
@@ -352,8 +352,8 @@ def _cfr_step_pure(
     # SAFEGUARD: Validate regret magnitude to prevent zero-learning bugs
     regret_magnitude = jnp.sum(jnp.abs(regret_updates))
     #jax.debug.print("🛡️  SAFEGUARD: Regret magnitude validation:")
-    jax.debug.print("  regret_updates magnitude: min={}, max={}, total={}",
-                    jnp.min(regret_updates), jnp.max(regret_updates), regret_magnitude)
+    #jax.debug.print("  regret_updates magnitude: min={}, max={}, total={}",
+    #                jnp.min(regret_updates), jnp.max(regret_updates), regret_magnitude)
     
     # Critical check: Warn if regret updates are suspiciously small
     #jax.debug.print("⚠️  Zero-learning check: magnitude < 0.001? {}", regret_magnitude < 0.001)
