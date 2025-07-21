@@ -66,3 +66,19 @@ if positive_info_sets:
         gaps = [positive_info_sets[i+1] - positive_info_sets[i] for i in range(len(positive_info_sets)-1)]
         print(f"Avg gap between positive info sets: {sum(gaps)/len(gaps):.0f}")
         print(f"Min/Max gaps: {min(gaps)}/{max(gaps)}")
+
+print(f"\n🔍 ANALYZING REGION 438K-443K:")
+
+# Test diferentes situaciones para ver sus info set IDs
+test_cases = [
+    (jnp.array([51, 47]), "AA", 0),     # AA, position 0
+    (jnp.array([51, 47]), "AA", 5),     # AA, position 5
+    (jnp.array([23, 0]), "72o", 0),     # 72o, position 0
+    (jnp.array([44, 45]), "KK", 2),     # KK, position 2
+]
+
+for hole_cards, name, pos in test_cases:
+    test_community = jnp.full(5, -1)
+    test_pot = jnp.array([50.0])
+    info_id = compute_info_set_id(hole_cards, test_community, pos, test_pot)
+    print(f"{name} pos {pos}: info set {info_id}")
