@@ -531,7 +531,7 @@ def resolve_showdown(state: GameState, lut_keys, lut_values, table_size) -> jax.
 # ---------- Game simulation ----------
 @jax.jit
 def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9):
-    """Play one complete game with configurable action space."""
+    """Play one complete game with MORE DIVERSITY."""
     idx_scalar = jax.random.randint(key, (), 0, 1000000)
     key = jax.random.fold_in(jax.random.PRNGKey(0), idx_scalar)
     
@@ -551,27 +551,39 @@ def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9):
     hist_ptr = jnp.array([0])
     
     state = GameState(
-        stacks=stacks,
-        bets=bets,
-        player_status=player_status,
-        hole_cards=hole_cards,
-        comm_cards=comm_cards,
-        cur_player=cur_player,
-        street=street,
-        pot=pot,
-        deck=deck,
-        deck_ptr=deck_ptr,
-        acted_this_round=acted_this_round,
-        key=key,
-        action_hist=action_hist,
-        hist_ptr=hist_ptr
+        stacks=stacks, bets=bets, player_status=player_status, hole_cards=hole_cards,
+        comm_cards=comm_cards, cur_player=cur_player, street=street, pot=pot,
+        deck=deck, deck_ptr=deck_ptr, acted_this_round=acted_this_round,
+        key=key, action_hist=action_hist, hist_ptr=hist_ptr
     )
     
-    # Play streets
-    state = play_street(state, 0, num_actions)   # Preflop
-    state = play_street(state, 3, num_actions)   # Flop
-    state = play_street(state, 1, num_actions)   # Turn
-    state = play_street(state, 1, num_actions)   # River
+    # NEW: DIVERSIFIED STREET PLAY
+    key, subkey = jax.random.split(key)
+    random_choice = jax.random.randint(subkey, (), 0, 4)
+    
+    # Play different game lengths for diversity
+    state = play_street(state, 0, num_actions)   # Always preflop
+    
+    state = lax.cond(
+        random_choice >= 1,  # 75% chance to see flop
+        lambda s: play_street(s, 3, num_actions),
+        lambda s: s,
+        state
+    )
+    
+    state = lax.cond(
+        random_choice >= 2,  # 50% chance to see turn
+        lambda s: play_street(s, 1, num_actions),
+        lambda s: s,
+        state
+    )
+    
+    state = lax.cond(
+        random_choice >= 3,  # 25% chance to see river
+        lambda s: play_street(s, 1, num_actions),
+        lambda s: s,
+        state
+    )
     
     # Resolve showdown
     payoffs = resolve_showdown(state, lut_keys, lut_values, table_size)

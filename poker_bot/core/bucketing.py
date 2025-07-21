@@ -147,7 +147,7 @@ def _compute_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) 
     num_community = jnp.sum(community_cards >= 0)
     postflop_adjustment = jnp.where(
         num_community >= 3,
-        jnp.int32(169),  # Add offset for postflop hands
+        jnp.int32(50),  # Add offset for postflop hands
         jnp.int32(0)
     )
     
