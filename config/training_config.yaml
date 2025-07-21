@@ -21,7 +21,7 @@ strategy_threshold: 0.000001       # Minimum strategy probability
 
 # Hybrid CFR+ Settings
 use_cfr_plus: false                 # Activa/desactiva la poda de regrets de CFR+
-use_regret_discounting: true       # Activa/desactiva el descuento de regrets
+use_regret_discounting: false       # Activa/desactiva el descuento de regrets
 discount_factor: 0.9995            # Factor de descuento para los regrets (CFR-γ)
 
 # ==============================================================================
