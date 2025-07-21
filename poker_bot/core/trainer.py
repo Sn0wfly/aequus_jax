@@ -370,7 +370,15 @@ def _cfr_step_pure(
     updated_regrets = discounted_regrets + regret_updates
     
     # CRITICAL FIX: Use reasonable clipping instead of ultraconservative
-    updated_regrets = jnp.clip(updated_regrets, -1.0, 1.0)  # Reduced clipping to concentrate regrets  # Increased from ±0.05
+    updated_regrets = jnp.clip(updated_regrets, -1.0, 1.0)
+    
+    # Pruning agresivo tipo Pluribus: eliminar regrets muy negativos
+    extremely_negative_mask = updated_regrets < -0.1
+    updated_regrets = jnp.where(
+        extremely_negative_mask,
+        jnp.zeros_like(updated_regrets),
+        updated_regrets
+    )
     
     # Aplicar poda CFR+: establecer regrets negativos a cero
     if config.use_cfr_plus:
