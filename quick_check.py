@@ -46,3 +46,23 @@ print(f"Trainer config MC sampling rate: {trainer.config.mc_sampling_rate}")
 print(f"Current regret shape: {trainer.regrets.shape}")
 print(f"Model iteration: {trainer.iteration}")
 print(f"Trainer batch size: {trainer.config.batch_size}")
+
+print("\n🔍 DEBUGGING GAME DISTRIBUTION:")
+
+# Encuentra los info sets que tienen regrets positivos
+def get_positive_info_sets(regrets):
+    positive_info_sets = []
+    for i in range(regrets.shape[0]):
+        if jnp.any(regrets[i] > 0):
+            positive_info_sets.append(int(i))
+    return positive_info_sets
+
+positive_info_sets = get_positive_info_sets(trainer.regrets)
+print(f"Info sets with positive regrets: {positive_info_sets[:10]}...")  # Primeros 10
+if positive_info_sets:
+    print(f"Range of positive info sets: {min(positive_info_sets)} - {max(positive_info_sets)}")
+    print(f"Are they clustered? Gap analysis:")
+    if len(positive_info_sets) > 1:
+        gaps = [positive_info_sets[i+1] - positive_info_sets[i] for i in range(len(positive_info_sets)-1)]
+        print(f"Avg gap between positive info sets: {sum(gaps)/len(gaps):.0f}")
+        print(f"Min/Max gaps: {min(gaps)}/{max(gaps)}")
