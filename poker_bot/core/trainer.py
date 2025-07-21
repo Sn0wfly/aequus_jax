@@ -573,11 +573,15 @@ class PokerTrainer:
             if i % self.config.log_interval == 0:
                 logger.info(f"📊 Iteration {i}: regret={regret_magnitude:.4f}, entropy={strategy_entropy:.4f}, time={iter_time:.3f}s")
             
-            # Save checkpoint
-            if i % self.config.save_interval == 0:
+            # Save checkpoint (no guardar en iteración 0)
+            if i > 0 and i % self.config.save_interval == 0:
                 checkpoint_path = f"{save_path}_iter_{i}.pkl"
                 self.save_model(checkpoint_path)
                 logger.info(f"💾 Saved checkpoint: {checkpoint_path}")
+        
+        # Guardar siempre el modelo final al terminar
+        self.save_model(save_path)
+        logger.info(f"💾 Final model saved to {save_path}")
         
         total_time = time.time() - start_time
         logger.info(f"✅ Training completed in {total_time:.2f}s")
