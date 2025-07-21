@@ -5,6 +5,17 @@ trainer.load_model("models/learning_test.pkl")
 
 # Check regrets
 import jax.numpy as jnp
+from poker_bot.core.bucketing import compute_info_set_id
+
+# Test qué info set IDs genera el bucketing
+test_hole_cards = jnp.array([48, 49])  # AA
+test_community = jnp.full(5, -1)
+test_pot = jnp.array([50.0])
+
+info_set_id = compute_info_set_id(test_hole_cards, test_community, 0, test_pot)
+print(f"Example info set ID: {info_set_id}")
+print(f"Max possible ID range: 0-{trainer.regrets.shape[0]-1}")
+
 positive_regrets = jnp.sum(trainer.regrets > 0)
 max_regret = jnp.max(trainer.regrets)
 min_regret = jnp.min(trainer.regrets)
