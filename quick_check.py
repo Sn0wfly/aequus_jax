@@ -82,3 +82,19 @@ for hole_cards, name, pos in test_cases:
     test_pot = jnp.array([50.0])
     info_id = compute_info_set_id(hole_cards, test_community, pos, test_pot)
     print(f"{name} pos {pos}: info set {info_id}")
+
+print(f"\n🚨 DEBUGGING STREET VALUES:")
+
+from poker_bot.core.bucketing import _compute_street_bucket
+
+test_community_preflop = jnp.full(5, -1)     # Preflop
+test_community_flop = jnp.array([1, 2, 3, -1, -1])  # Flop  
+test_community_turn = jnp.array([1, 2, 3, 4, -1])    # Turn
+test_community_river = jnp.array([1, 2, 3, 4, 5])     # River
+
+for comm, name in [(test_community_preflop, "preflop"), 
+                   (test_community_flop, "flop"),
+                   (test_community_turn, "turn"), 
+                   (test_community_river, "river")]:
+    street = _compute_street_bucket(comm)
+    print(f"{name}: street_bucket = {street}")
