@@ -363,7 +363,7 @@ def _cfr_step_pure(
     )
     
     # CRITICAL FIX: Use a reasonable learning rate instead of ultraconservative
-    learning_rate = 0.1  # Increased from 0.001 for faster learning
+    learning_rate = config.learning_rate  # Increased from 0.001 for faster learning
     regret_updates = regret_updates * learning_rate
     
     # Actualizar regrets con nueva información
