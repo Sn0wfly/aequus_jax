@@ -272,7 +272,7 @@ def _update_regrets_for_game_pure(
     # Return only the updates (difference from zero table)
     regret_updates = updated_regrets - zero_regrets
     
-    # DEBUG: Add debugging to see what's happening
+    # DEBUG: Add debugging to see what's happening.
     #jax.debug.print("🔍 _update_regrets_for_game_pure debugging:")
     #jax.debug.print("  info_set_indices: {}", info_set_indices)
     #jax.debug.print("  sampling_mask: {}", sampling_mask)
