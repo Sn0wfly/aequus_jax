@@ -29,12 +29,12 @@ class TrainerConfig:
     batch_size: int = 128
     num_actions: int = 9  # FOLD, CHECK, CALL, BET_SMALL, BET_MED, BET_LARGE, RAISE_SMALL, RAISE_MED, ALL_IN
     max_info_sets: int = 1_000_000  # Increased from 50,000 to handle large indices
-    learning_rate: float = 0.01
+    learning_rate: float = 0.1  # Increased from 0.01 to create larger regret updates
     
     # CFR parameters
     regret_floor: float = -100.0  # Legacy parameter - will be overridden when CFR+ is enabled
     regret_ceiling: float = 100.0
-    strategy_threshold: float = 1e-10  # Reduced from 1e-6 to allow smaller regrets to create strategies
+    strategy_threshold: float = 1e-15  # Further reduced to handle very small regrets from large tables
     
     # Hybrid CFR+ parameters
     discount_factor: float = 0.9995  # Regret discounting factor (CFR-γ)
@@ -370,7 +370,7 @@ def _cfr_step_pure(
     updated_regrets = discounted_regrets + regret_updates
     
     # CRITICAL FIX: Use reasonable clipping instead of ultraconservative
-    updated_regrets = jnp.clip(updated_regrets, -10.0, 10.0)  # Increased from ±0.05
+    updated_regrets = jnp.clip(updated_regrets, -1.0, 1.0)  # Reduced clipping to concentrate regrets  # Increased from ±0.05
     
     # Aplicar poda CFR+: establecer regrets negativos a cero
     if config.use_cfr_plus:
