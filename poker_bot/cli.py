@@ -45,28 +45,57 @@ def cli():
               help='Base path for saving models')
 @click.option('--validate', is_flag=True,
               help='Run validation before and after training')
-def train(config: str, iterations: int, save_path: str, validate: bool):
+@click.option('--resume',
+              help='Resume training from checkpoint file or directory')
+def train(config: str, iterations: int, save_path: str, validate: bool, resume: str):
     """Train the poker AI using CFR algorithm"""
     
     click.echo(f"🚀 Starting Aequus training session...")
     click.echo(f"Config: {config}")
     click.echo(f"Save path: {save_path}")
+    if resume:
+        click.echo(f"Resume from: {resume}")
     
     try:
         # Create trainer
-        if os.path.exists(config):
-            trainer = create_trainer(config)
-            click.echo(f"✅ Loaded configuration from {config}")
+        if resume:
+            # Resume mode - create trainer from checkpoint
+            if os.path.isfile(resume):
+                # Direct checkpoint file
+                trainer = create_trainer()
+                trainer.load_model(resume)
+                click.echo(f"✅ Resuming from checkpoint: {resume}")
+            elif os.path.isdir(resume):
+                # Directory - find latest checkpoint
+                trainer = create_trainer()
+                checkpoint = trainer.find_latest_checkpoint(resume)
+                if checkpoint:
+                    trainer.load_model(checkpoint)
+                    click.echo(f"✅ Resuming from latest checkpoint: {checkpoint}")
+                else:
+                    raise click.ClickException(f"No checkpoints found in directory: {resume}")
+            else:
+                raise click.ClickException(f"Resume path not found: {resume}")
         else:
-            trainer = create_trainer()
-            click.echo(f"⚠️ Config not found, using defaults")
-        
-        # Override iterations if specified
-        if iterations:
+            # Fresh training mode
+            if os.path.exists(config):
+                trainer = create_trainer(config)
+                click.echo(f"✅ Loaded configuration from {config}")
+            else:
+                trainer = create_trainer()
+                click.echo(f"⚠️ Config not found, using defaults")
+     
+        # Override iterations if specified (only for fresh training)
+        if iterations and not resume:
             click.echo(f"🔧 Overriding iterations: {iterations}")
-        else:
-            iterations = 1000  # Default
-        
+        elif not iterations and not resume:
+            iterations = 1000  # Default for fresh training
+        elif resume:
+            # For resume, iterations is required
+            if not iterations:
+                raise click.ClickException("--iterations is required when using --resume")
+            click.echo(f"🔧 Additional iterations: {iterations}")
+     
         # Pre-training validation
         if validate:
             click.echo(f"\n🔍 Running pre-training validation...")
@@ -76,10 +105,10 @@ def train(config: str, iterations: int, save_path: str, validate: bool):
                 detailed_validation(trainer.strategy)
                 return
             click.echo(f"✅ Pre-training validation passed")
-        
+     
         # Create save directory
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        
+     
         # Run training
         click.echo(f"\n🎯 Starting CFR training...")
         stats = trainer.train(iterations, save_path)
@@ -95,10 +124,11 @@ def train(config: str, iterations: int, save_path: str, validate: bool):
         
         # Display final statistics
         click.echo(f"\n📊 Training Statistics:")
-        click.echo(f"   Iterations: {stats['iterations_completed']:,}")
-        click.echo(f"   Time: {stats['total_time']:.1f}s")
-        click.echo(f"   Speed: {stats['iterations_per_second']:.1f} iter/s")
-        click.echo(f"   Final entropy: {stats['final_strategy_entropy']:.3f}")
+        click.echo(f"   Iterations: {len(stats['iterations']):,}")
+        click.echo(f"   Time: {sum(stats['training_times']):.1f}s")
+        click.echo(f"   Speed: {len(stats['iterations'])/sum(stats['training_times']):.1f} iter/s")
+        click.echo(f"   Final entropy: {stats['strategy_entropies'][-1]:.3f}")
+        click.echo(f"   Final regret magnitude: {stats['regret_magnitudes'][-1]:.4f}")
         
     except Exception as e:
         click.echo(f"❌ Training failed: {e}")
@@ -124,16 +154,30 @@ def play(model: str, games: int):
         
         # Simple test games
         click.echo(f"\n🎮 Playing {games} test games...")
+
+        import random
         
         for i in range(games):
-            # Create a simple test game state
+            # --- INICIO DEL NUEVO BLOQUE ---
+            # Crear un mazo y barajarlo para cada mano de prueba
+            deck = list(range(52))
+            random.shuffle(deck)
+            
+            # Repartir cartas únicas y aleatorias
+            hole_cards = [deck.pop(), deck.pop()]
+            community_cards = [deck.pop() for _ in range(5)]
+            # Rellenar con -1 si no se reparten todas, es buena práctica
+            community_cards.extend([-1] * (5 - len(community_cards)))
+            
+            # Generar estado de juego aleatorio
             test_state = {
-                'player_id': 0,
-                'hole_cards': [i * 2, i * 2 + 1],  # Different cards each game
-                'community_cards': [10, 11, 12, 13, 14],
-                'pot_size': 50.0,
-                'position': i % 6
+                'player_id': random.randint(0, 5), # También aleatoriza el jugador
+                'hole_cards': hole_cards,
+                'community_cards': community_cards,
+                'pot_size': random.uniform(20.0, 300.0), # Pozo de tamaño variable
+                'position': random.randint(0, 5)
             }
+            # --- FIN DEL NUEVO BLOQUE ---
             
             action = bot.get_action(test_state)
             click.echo(f"   Game {i+1}: Action = {action}")
