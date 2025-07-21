@@ -14,11 +14,19 @@ print(f"Max regret: {max_regret}")
 print(f"Min regret: {min_regret}")
 print(f"Strategy entropy: {trainer._compute_strategy_entropy()}")
 
+# NUEVO ANÁLISIS CORREGIDO:
 print(f"Total info sets: {trainer.regrets.shape[0]}")
 print(f"Positive regret coverage: {positive_regrets/trainer.regrets.shape[0]*100:.3f}%")
 
-# Check estrategia en info sets con regrets positivos
-positive_mask = trainer.regrets > 0
-if jnp.any(positive_mask):
-    positive_strategies = trainer.strategy[positive_mask]
-    print(f"Strategy entropy in positive regret areas: {jnp.mean(-jnp.sum(positive_strategies * jnp.log(positive_strategies + 1e-10), axis=1)):.4f}") 
+# Check info sets que tienen AL MENOS un regret positivo
+info_sets_with_positive = jnp.any(trainer.regrets > 0, axis=1)
+num_info_sets_with_positive = jnp.sum(info_sets_with_positive)
+print(f"Info sets with ANY positive regret: {num_info_sets_with_positive}")
+
+# Strategy entropy en esos info sets
+if num_info_sets_with_positive > 0:
+    positive_info_set_strategies = trainer.strategy[info_sets_with_positive]
+    entropies = -jnp.sum(positive_info_set_strategies * jnp.log(positive_info_set_strategies + 1e-10), axis=1)
+    avg_entropy = jnp.mean(entropies)
+    print(f"Avg strategy entropy in positive regret info sets: {avg_entropy:.4f}")
+    print(f"Min/Max entropy in positive areas: {jnp.min(entropies):.4f}/{jnp.max(entropies):.4f}")
