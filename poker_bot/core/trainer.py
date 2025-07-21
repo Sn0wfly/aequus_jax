@@ -373,7 +373,7 @@ def _cfr_step_pure(
     updated_regrets = jnp.clip(updated_regrets, -1.0, 1.0)
     
     # Pruning agresivo tipo Pluribus: eliminar regrets muy negativos
-    extremely_negative_mask = updated_regrets < -0.1
+    extremely_negative_mask = updated_regrets < -2.0
     updated_regrets = jnp.where(
         extremely_negative_mask,
         jnp.zeros_like(updated_regrets),
