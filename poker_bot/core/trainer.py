@@ -141,7 +141,7 @@ def _compute_real_cfr_regrets(
     
     # MUCH MORE CONSERVATIVE NORMALIZATION
     # Use a very small scale to prevent explosion
-    scale_factor = 20.0  # Very small scale
+    scale_factor = 8.0  # Very small scale
     
     # Define action values based on hand strength (CONSERVATIVE SCALE)
     if num_actions == 9:  # Full 9-action NLHE system
@@ -378,7 +378,7 @@ def _cfr_step_pure(
     updated_regrets = discounted_regrets + regret_updates
     
     # CRITICAL FIX: Use reasonable clipping instead of ultraconservative
-    updated_regrets = jnp.clip(updated_regrets, -2.0, 2.0)
+    updated_regrets = jnp.clip(updated_regrets, -1.0, 1.0)
     
     # Pruning agresivo tipo Pluribus: eliminar regrets muy negativos
     extremely_negative_mask = updated_regrets < -2.0

@@ -7,11 +7,11 @@
 
 # CFR Training Settings
 num_iterations: 10000              # Total CFR iterations
-batch_size: 256                    # Games per training batch (reduced for memory)
-learning_rate: 0.05                # CFR learning rate
+batch_size: 320                    # Games per training batch (reduced for memory)
+learning_rate: 0.02                # CFR learning rate
 max_info_sets: 500000            # Maximum info sets (increased from 50,000)
-save_interval: 1000                # Save checkpoint every N iterations
-log_interval: 5000                  # Log progress every N iterations
+save_interval: 5000                # Save checkpoint every N iterations
+log_interval: 1000                  # Log progress every N iterations
 
 # Strategy Parameters
 num_actions: 9                     # FOLD, CHECK, CALL, BET_SMALL, BET_MED, BET_LARGE, RAISE_SMALL, RAISE_MED, ALL_IN
@@ -29,7 +29,7 @@ discount_factor: 0.9995            # Factor de descuento para los regrets (CFR-Î
 # ==============================================================================
 
 # Monte Carlo Sampling Settings
-mc_sampling_rate: 0.75             # Process 50% of learning opportunities (was 0.15)
+mc_sampling_rate: 1.0             # Process 50% of learning opportunities (was 0.15)
 mc_exploration_epsilon: 0.6        # 60% exploration, 40% exploitation
 mc_min_samples_per_info_set: 100   # Minimum samples before considering info set learned
 mc_max_samples_per_info_set: 10000 # Maximum samples per info set (prevents overfitting)
