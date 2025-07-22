@@ -98,6 +98,46 @@ def _evaluate_hand_simple_pure(hole_cards: jnp.ndarray) -> jnp.ndarray:
     
     return rank_value + pair_bonus + suited_bonus
 
+@jax.jit
+def _evaluate_7card_simple(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
+    """Evaluación rápida de 7 cartas sin LUT pesada."""
+    # Combinar todas las cartas válidas
+    all_cards = jnp.concatenate([hole_cards, community_cards])
+    valid_cards = all_cards[all_cards >= 0]  # Solo cartas válidas
+    
+    ranks = valid_cards // 4
+    suits = valid_cards % 4
+    
+    # Contar rangos y palos
+    rank_counts = jnp.bincount(ranks, length=13)
+    suit_counts = jnp.bincount(suits, length=4)
+    
+    # Detección de manos
+    max_rank_count = jnp.max(rank_counts)
+    pairs = jnp.sum(rank_counts == 2)
+    is_flush = jnp.any(suit_counts >= 5)
+    high_card = jnp.max(ranks) / 12.0
+    
+    # Scoring simple pero efectivo
+    strength = jnp.where(
+        max_rank_count >= 4, 0.95,  # Poker
+        jnp.where(
+            max_rank_count == 3, 0.75 + pairs * 0.1,  # Full/Trio
+            jnp.where(
+                is_flush, 0.65,  # Color
+                jnp.where(
+                    pairs >= 2, 0.5,  # Dobles
+                    jnp.where(
+                        pairs == 1, 0.35 + high_card * 0.1,  # Par
+                        high_card * 0.3  # Carta alta
+                    )
+                )
+            )
+        )
+    )
+    
+    return jnp.clip(strength, 0.0, 1.0)
+
 @partial(jax.jit, static_argnames=("num_actions",))
 def _compute_real_cfr_regrets(
     hole_cards: jnp.ndarray,
@@ -106,10 +146,7 @@ def _compute_real_cfr_regrets(
     pot_size: jnp.ndarray,
     game_payoffs: jnp.ndarray,
     strategy: jnp.ndarray,
-    num_actions: int,
-    lut_keys: jnp.ndarray,
-    lut_values: jnp.ndarray,
-    lut_table_size: int
+    num_actions: int
 ) -> jnp.ndarray:
     """
     Compute real CFR regrets using counterfactual values.
@@ -133,10 +170,7 @@ def _compute_real_cfr_regrets(
     # Get current strategy for this info set
     current_strategy = strategy[info_set_id]
     
-    # Combine hole and community cards to get the full 7-card hand
-    all_cards = jnp.concatenate([hole_cards, community_cards])
-    hand_strength = game_engine.evaluate_hand_jax_native(all_cards, lut_keys, lut_values, lut_table_size)
-    normalized_strength = hand_strength / 7462.0  # Max hand strength
+    normalized_strength = _evaluate_7card_simple(hole_cards, community_cards)
     
     # Compute counterfactual values for each action
     # This is a simplified but realistic CFR computation
@@ -220,10 +254,7 @@ def _update_regrets_for_game_pure(
     game_results: Dict[str, jnp.ndarray],
     game_payoffs: jnp.ndarray,
     num_actions: int,
-    rng_key: jax.Array,
-    lut_keys: jnp.ndarray,
-    lut_values: jnp.ndarray,
-    lut_table_size: int
+    rng_key: jax.Array
 ) -> jnp.ndarray:
     """
     FIXED VERSION: Real CFR regret computation with MC-CFR sampling.
@@ -263,7 +294,7 @@ def _update_regrets_for_game_pure(
     def compute_player_regrets(hole_cards, player_idx, pot, payoff):
         return _compute_real_cfr_regrets(
             hole_cards, community_cards, player_idx, jnp.array([pot]), 
-            game_payoffs, strategy, num_actions, lut_keys, lut_values, lut_table_size
+            game_payoffs, strategy, num_actions
         )
     
     all_action_regrets = jax.vmap(compute_player_regrets)(
@@ -303,10 +334,7 @@ def _cfr_step_pure(
     regrets: jnp.ndarray,
     strategy: jnp.ndarray,
     key: jax.Array,
-    config: TrainerConfig,
-    lut_keys: jnp.ndarray,
-    lut_values: jnp.ndarray, 
-    lut_table_size: int
+    config: TrainerConfig
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Paso de entrenamiento CFR+ completamente puro usando el motor de juego real.
@@ -343,7 +371,7 @@ def _cfr_step_pure(
         # Game processing
         
         return _update_regrets_for_game_pure(
-            regrets, strategy, game_results_single, game_payoffs_single, config.num_actions, game_key, lut_keys, lut_values, lut_table_size
+            regrets, strategy, game_results_single, game_payoffs_single, config.num_actions, game_key
         )
     
     # Usar jax.vmap() para procesar TODOS los juegos del batch simultáneamente
@@ -567,8 +595,7 @@ class PokerTrainer:
             
             # Perform CFR step with MC-CFR sampling
             self.regrets, self.strategy = _cfr_step_pure(
-                self.regrets, self.strategy, iter_key, self.config,
-                self.lut_keys_jax, self.lut_values_jax, self.lut_table_size
+                self.regrets, self.strategy, iter_key, self.config
             )
             
             self.iteration += 1
