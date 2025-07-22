@@ -147,18 +147,18 @@ def _compute_real_cfr_regrets(
     if num_actions == 9:  # Full 9-action NLHE system
         # Action values: [FOLD, CHECK, CALL, BET_SMALL, BET_MED, BET_LARGE, RAISE_SMALL, RAISE_MED, ALL_IN]
         action_values = jnp.where(
-            normalized_strength > 0.8,  # Very strong hands
-            jnp.array([-0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 0.7, 0.9, 1.0]) * scale_factor,
+            normalized_strength > 0.8,  # Premium (AA, KK)
+            jnp.array([-0.8, 0.1, 0.2, 0.4, 0.6, 0.8, 0.5, 0.7, 1.0]) * scale_factor,
             jnp.where(
-                normalized_strength > 0.6,  # Strong hands
-                jnp.array([-0.2, 0.1, 0.2, 0.3, 0.4, 0.5, 0.4, 0.6, 0.7]) * scale_factor,
+                normalized_strength > 0.6,  # Strong (QQ, AK)
+                jnp.array([-0.5, 0.0, 0.1, 0.3, 0.4, 0.6, 0.3, 0.5, 0.7]) * scale_factor,
                 jnp.where(
-                    normalized_strength > 0.4,  # Medium hands
-                    jnp.array([-0.3, 0.0, 0.1, 0.2, 0.3, 0.4, 0.2, 0.3, 0.5]) * scale_factor,
+                    normalized_strength > 0.4,  # Medium (AQ, KJ)
+                    jnp.array([-0.2, 0.0, 0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3]) * scale_factor,
                     jnp.where(
-                        normalized_strength > 0.2,  # Weak hands
-                        jnp.array([-0.4, 0.0, 0.0, 0.1, 0.2, 0.3, 0.1, 0.2, 0.3]) * scale_factor,
-                        jnp.array([-0.5, 0.0, 0.0, 0.0, 0.1, 0.2, 0.0, 0.1, 0.2]) * scale_factor  # Very weak hands
+                        normalized_strength > 0.2,  # Weak (A9, KT)
+                        jnp.array([0.1, -0.1, 0.0, 0.1, 0.2, 0.3, 0.0, 0.1, 0.2]) * scale_factor,
+                        jnp.array([0.8, -0.3, -0.2, -0.4, -0.3, -0.2, -0.5, -0.4, -0.1]) * scale_factor  # Trash (72o)
                     )
                 )
             )
@@ -187,7 +187,7 @@ def _compute_real_cfr_regrets(
         )
     
     # VERY CONSERVATIVE CLIPPING
-    action_values = jnp.clip(action_values, -0.1, 0.1)
+    action_values = jnp.clip(action_values, -2.0, 2.0)
 
     # DEBUG: Print action values
     #jax.debug.print("🔍 action_values: min={}, max={}, mean={}", 
