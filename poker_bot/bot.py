@@ -137,7 +137,8 @@ class PokerBot:
                     num_actions = len(actions)
                     strategy_probs = np.ones(num_actions) / num_actions
                 
-                # Muestreo Probabilístico de la Acción
+                # Asegurar arrays mismo tamaño
+                actions = actions[:len(strategy_probs)]
                 selected_action = np.random.choice(actions, p=strategy_probs)
                 
                 logger.debug(f"Info set {info_set_idx}: Strategy={np.round(strategy_probs, 2)} -> Sampled Action: {selected_action}")

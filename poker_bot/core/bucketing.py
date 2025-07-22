@@ -77,8 +77,8 @@ def compute_info_set_id(hole_cards: jnp.ndarray, community_cards: jnp.ndarray,
         action_bucket                # 9 * 1 = 9
     )
     
-    # Ensure within valid range (max 1,000,000 info sets)
-    return jnp.mod(info_set_id, 1000000).astype(jnp.int32)
+    # Ensure within valid range (max 500,000 info sets)
+    return jnp.clip(jnp.mod(info_set_id, 1000000), 0, 499999).astype(jnp.int32)
 
 @jax.jit
 def _compute_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
