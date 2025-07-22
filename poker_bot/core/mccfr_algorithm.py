@@ -14,7 +14,7 @@ import numpy as np
 
 # MC-CFR Configuration
 class MCCFRConfig:
-    sampling_rate = 0.75  # Process 50% of learning opportunities (was 0.15)
+    sampling_rate = 0.95  # Process 50% of learning opportunities (was 0.15)
     batch_size = 768      # Process 768 player instances per batch
     exploration_epsilon = 0.6  # 60% exploration, 40% exploitation
     regret_floor = 0.0
