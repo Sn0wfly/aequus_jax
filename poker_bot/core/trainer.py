@@ -187,7 +187,7 @@ def _compute_real_cfr_regrets(
         )
     
     # VERY CONSERVATIVE CLIPPING
-    action_values = jnp.clip(action_values, -10.0, 10.0)
+    #action_values = jnp.clip(action_values, -10.0, 10.0)
 
     # DEBUG: Print action values
     #jax.debug.print("🔍 action_values: min={}, max={}, mean={}", 
@@ -378,7 +378,7 @@ def _cfr_step_pure(
     updated_regrets = discounted_regrets + regret_updates
     
     # CRITICAL FIX: Use reasonable clipping instead of ultraconservative
-    updated_regrets = jnp.clip(updated_regrets, -5.0, 5.0)
+    #updated_regrets = jnp.clip(updated_regrets, -5.0, 5.0)
     
     # Pruning agresivo tipo Pluribus: eliminar regrets muy negativos
     extremely_negative_mask = updated_regrets < -2.0
