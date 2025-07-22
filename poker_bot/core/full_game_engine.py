@@ -539,7 +539,10 @@ def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9):
     stacks = jnp.full((6,), 1000.0)
     bets = jnp.zeros((6,)).at[0].set(5.0).at[1].set(10.0)
     player_status = jnp.zeros((6,), dtype=jnp.int8)
-    hole_cards = jnp.arange(12).reshape(6, 2)
+    # Randomizar hole_cards
+    key, subkey = jax.random.split(key)
+    shuffled_deck = jax.random.permutation(subkey, jnp.arange(52))
+    hole_cards = shuffled_deck[:12].reshape(6, 2)
     comm_cards = jnp.full((5,), -1)
     cur_player = jnp.array([2], dtype=jnp.int8)
     street = jnp.array([0], dtype=jnp.int8)
@@ -611,7 +614,10 @@ def initial_state_for_idx(idx):
     stacks = jnp.full((6,), 1000.0)
     bets = jnp.zeros((6,)).at[0].set(5.0).at[1].set(10.0)
     player_status = jnp.zeros((6,), dtype=jnp.int8)
-    hole_cards = jnp.arange(12).reshape(6, 2)
+    # Randomizar hole_cards
+    key, subkey = jax.random.split(key)
+    shuffled_deck = jax.random.permutation(subkey, jnp.arange(52))
+    hole_cards = shuffled_deck[:12].reshape(6, 2)
     comm_cards = jnp.full((5,), -1)
     cur_player = jnp.array([2], dtype=jnp.int8)
     street = jnp.array([0], dtype=jnp.int8)
