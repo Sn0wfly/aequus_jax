@@ -124,7 +124,11 @@ class PokerBot:
                 
                 # Get strategy for this info set
                 strategy_probs = self.strategy[info_set_idx]
-                actions = ["FOLD", "CHECK", "CALL", "BET", "RAISE", "ALL_IN"]
+                # 9 acciones - MATCHING el modelo entrenado
+                actions = [
+                    "FOLD", "CHECK", "CALL", "BET_SMALL", "BET_MED", "BET_LARGE",
+                    "RAISE_SMALL", "RAISE_MED", "ALL_IN"
+                ]
                 
                 # Asegurar que las probabilidades sean válidas para el muestreo
                 strategy_probs = np.maximum(strategy_probs, 0)  # Prevenir probabilidades negativas
