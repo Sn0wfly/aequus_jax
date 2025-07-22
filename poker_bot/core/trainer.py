@@ -106,7 +106,10 @@ def _compute_real_cfr_regrets(
     pot_size: jnp.ndarray,
     game_payoffs: jnp.ndarray,
     strategy: jnp.ndarray,
-    num_actions: int
+    num_actions: int,
+    lut_keys: jnp.ndarray,
+    lut_values: jnp.ndarray,
+    lut_table_size: int
 ) -> jnp.ndarray:
     """
     Compute real CFR regrets using counterfactual values.
@@ -130,9 +133,10 @@ def _compute_real_cfr_regrets(
     # Get current strategy for this info set
     current_strategy = strategy[info_set_id]
     
-    # Compute hand strength for value estimation
-    hand_strength = _evaluate_hand_simple_pure(hole_cards)
-    normalized_strength = hand_strength / 10000.0
+    # Combine hole and community cards to get the full 7-card hand
+    all_cards = jnp.concatenate([hole_cards, community_cards])
+    hand_strength = game_engine.evaluate_hand_jax_native(all_cards, lut_keys, lut_values, lut_table_size)
+    normalized_strength = hand_strength / 7462.0  # Max hand strength
     
     # Compute counterfactual values for each action
     # This is a simplified but realistic CFR computation
@@ -216,7 +220,10 @@ def _update_regrets_for_game_pure(
     game_results: Dict[str, jnp.ndarray],
     game_payoffs: jnp.ndarray,
     num_actions: int,
-    rng_key: jax.Array
+    rng_key: jax.Array,
+    lut_keys: jnp.ndarray,
+    lut_values: jnp.ndarray,
+    lut_table_size: int
 ) -> jnp.ndarray:
     """
     FIXED VERSION: Real CFR regret computation with MC-CFR sampling.
@@ -256,7 +263,7 @@ def _update_regrets_for_game_pure(
     def compute_player_regrets(hole_cards, player_idx, pot, payoff):
         return _compute_real_cfr_regrets(
             hole_cards, community_cards, player_idx, jnp.array([pot]), 
-            game_payoffs, strategy, num_actions
+            game_payoffs, strategy, num_actions, lut_keys, lut_values, lut_table_size
         )
     
     all_action_regrets = jax.vmap(compute_player_regrets)(
@@ -336,7 +343,7 @@ def _cfr_step_pure(
         # Game processing
         
         return _update_regrets_for_game_pure(
-            regrets, strategy, game_results_single, game_payoffs_single, config.num_actions, game_key
+            regrets, strategy, game_results_single, game_payoffs_single, config.num_actions, game_key, lut_keys, lut_values, lut_table_size
         )
     
     # Usar jax.vmap() para procesar TODOS los juegos del batch simultáneamente
