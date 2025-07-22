@@ -98,3 +98,9 @@ for comm, name in [(test_community_preflop, "preflop"),
                    (test_community_river, "river")]:
     street = _compute_street_bucket(comm)
     print(f"{name}: street_bucket = {street}")
+
+print(f"\n🔍 TRAINING ANALYSIS:")
+print(f"Total regret magnitude: {jnp.sum(jnp.abs(trainer.regrets)):.4f}")
+print(f"Non-zero regrets: {jnp.sum(jnp.abs(trainer.regrets) > 0.001)}")
+print(f"Max regret in entire table: {jnp.max(trainer.regrets):.6f}")
+print(f"Min regret in entire table: {jnp.min(trainer.regrets):.6f}")
