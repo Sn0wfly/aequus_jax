@@ -433,7 +433,7 @@ def _cfr_step_pure(
     )
     
     # CRITICAL FIX: Use a decaying learning rate for stability
-    learning_rate = config.learning_rate / jnp.sqrt(iteration + 1)
+    learning_rate = config.learning_rate # Constant learning rate
     regret_updates = regret_updates * learning_rate
     
     # Actualizar regrets con nueva información
