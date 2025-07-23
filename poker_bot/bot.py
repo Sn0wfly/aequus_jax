@@ -17,7 +17,66 @@ from typing import Dict, Any
 from .core.trainer import TrainerConfig 
 from .core.bucketing import compute_info_set_id
 
+import jax
+
 logger = logging.getLogger(__name__)
+
+@jax.jit
+def _evaluate_7card_simple_bot(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
+    """Evaluación de 7 cartas para bot (misma lógica que training)."""
+    all_cards = jnp.concatenate([hole_cards, community_cards])
+    valid_mask = all_cards >= 0
+    num_valid = jnp.sum(valid_mask)
+    
+    strength = jnp.where(
+        num_valid < 2,
+        0.1,
+        _compute_hand_strength_bot(all_cards, valid_mask)
+    )
+    
+    return jnp.clip(strength, 0.0, 1.0)
+
+@jax.jit 
+def _compute_hand_strength_bot(all_cards: jnp.ndarray, valid_mask: jnp.ndarray) -> jnp.ndarray:
+    """Computa fuerza de mano para bot."""
+    ranks = jnp.where(valid_mask, all_cards // 4, 0)
+    suits = jnp.where(valid_mask, all_cards % 4, 0)
+    
+    rank_counts = jnp.zeros(13)
+    suit_counts = jnp.zeros(4)
+    
+    for i in range(7):
+        rank_counts = rank_counts.at[ranks[i]].add(jnp.where(valid_mask[i], 1, 0))
+        suit_counts = suit_counts.at[suits[i]].add(jnp.where(valid_mask[i], 1, 0))
+    
+    max_rank_count = jnp.max(rank_counts)
+    pairs = jnp.sum(rank_counts == 2)
+    trips = jnp.sum(rank_counts == 3)
+    quads = jnp.sum(rank_counts == 4)
+    is_flush = jnp.any(suit_counts >= 5)
+    high_card = jnp.max(jnp.where(valid_mask, ranks, 0)) / 12.0
+    
+    strength = jnp.where(
+        quads > 0, 0.95,
+        jnp.where(
+            (trips > 0) & (pairs > 0), 0.85,
+            jnp.where(
+                is_flush, 0.75,
+                jnp.where(
+                    trips > 0, 0.45,
+                    jnp.where(
+                        pairs >= 2, 0.25,
+                        jnp.where(
+                            pairs == 1, 0.12 + high_card * 0.06,
+                            high_card * 0.08
+                        )
+                    )
+                )
+            )
+        )
+    )
+    
+    return strength
 
 class PokerBot:
     """
@@ -111,7 +170,11 @@ class PokerBot:
             # Get pot size
             pot_size = jnp.array([game_state.get('pot_size', 50.0)])
             
-            # Get info set using new bucketing system
+            # DEBUG: Print hand evaluation
+            hand_strength = _evaluate_7card_simple_bot(hole_cards, comm_cards)
+            print(f"Hand strength: {hand_strength:.3f}, Cards: {hole_cards}, Community: {comm_cards}")
+
+            # Get info set using new bucketing system  
             info_set_idx = compute_info_set_id(hole_cards, comm_cards, player_id, pot_size)
             
             # Convert to Python int
