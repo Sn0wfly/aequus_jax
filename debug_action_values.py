@@ -52,3 +52,21 @@ except Exception as e:
     print(f"❌ Error al computar action values: {e}")
     import traceback
     traceback.print_exc()
+
+
+print("\n🔍 TESTING FLUSH HAND:")
+flush_cards = jnp.array([37, 13])  # From Game 29
+flush_community = jnp.array([41, 31, 26, 49, 5])
+
+# Test hand strength evaluation
+strength = _evaluate_7card_simple(flush_cards, flush_community)
+print(f"Actual strength: {strength:.3f} (expected: 0.750)")
+
+# Test action values
+action_regrets = _compute_real_cfr_regrets(
+    flush_cards, flush_community, 0, jnp.array([50.0]), 
+    jnp.zeros(6), jnp.ones((50000, 9)) / 9, 9
+)
+
+print(f"FOLD regret: {action_regrets[0]:.3f} (should be NEGATIVE)")
+print(f"ALL_IN regret: {action_regrets[8]:.3f} (should be POSITIVE)")
