@@ -1,6 +1,6 @@
 # Debug directo de action_values para verificar que se estén aplicando
 import jax.numpy as jnp
-from poker_bot.core.trainer import _compute_real_cfr_regrets
+from poker_bot.core.trainer import _compute_real_cfr_regrets, _evaluate_7card_simple
 import numpy as np
 
 print("🔍 TESTING ACTION VALUES DIRECTLY:")
@@ -54,19 +54,44 @@ except Exception as e:
     traceback.print_exc()
 
 
-print("\n🔍 TESTING FLUSH HAND:")
-flush_cards = jnp.array([37, 13])  # From Game 29
-flush_community = jnp.array([41, 31, 26, 49, 5])
+print("\n�� TESTING FLUSH HAND (Game 29):")
+print("=" * 40)
+
+# Game 29 exacto que falló
+flush_cards = jnp.array([37, 13])  # Cards from failing game
+flush_community = jnp.array([41, 31, 26, 49, 5])  # Community from failing game
 
 # Test hand strength evaluation
-strength = _evaluate_7card_simple(flush_cards, flush_community)
-print(f"Actual strength: {strength:.3f} (expected: 0.750)")
+try:
+    strength = _evaluate_7card_simple(flush_cards, flush_community)
+    print(f"Game 29 strength: {strength:.3f} (should be 0.750)")
+    
+    # Test action values para flush
+    flush_regrets = _compute_real_cfr_regrets(
+        flush_cards, flush_community, 0, jnp.array([50.0]), 
+        jnp.zeros(6), jnp.ones((50000, 9)) / 9, 9
+    )
+    
+    print(f"\n📊 Action Values para FLUSH:")
+    actions = ["FOLD", "CHECK", "CALL", "BET_SMALL", "BET_MED", "BET_LARGE", "RAISE_SMALL", "RAISE_MED", "ALL_IN"]
+    
+    for i, (action, regret) in enumerate(zip(actions, flush_regrets)):
+        print(f"  {action:12}: {regret:8.3f}")
+    
+    fold_regret = flush_regrets[0]
+    allin_regret = flush_regrets[8]
+    
+    print(f"\n🚨 Flush Verification:")
+    print(f"  FOLD: {fold_regret:.3f} (should be NEGATIVE)")
+    print(f"  ALL_IN: {allin_regret:.3f} (should be POSITIVE)")
+    
+    if fold_regret < 0 and allin_regret > 0:
+        print(f"  ✅ Flush action values CORRECT")
+    else:
+        print(f"  ❌ Flush action values BROKEN!")
+        print(f"      This explains the fold-flush bug!")
 
-# Test action values
-action_regrets = _compute_real_cfr_regrets(
-    flush_cards, flush_community, 0, jnp.array([50.0]), 
-    jnp.zeros(6), jnp.ones((50000, 9)) / 9, 9
-)
-
-print(f"FOLD regret: {action_regrets[0]:.3f} (should be NEGATIVE)")
-print(f"ALL_IN regret: {action_regrets[8]:.3f} (should be POSITIVE)")
+except Exception as e:
+    print(f"❌ Error testing flush: {e}")
+    import traceback
+    traceback.print_exc()
