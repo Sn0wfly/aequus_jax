@@ -211,20 +211,19 @@ def _compute_real_cfr_regrets(
     
     # Define action values based on hand strength (CONSERVATIVE SCALE)
     if num_actions == 9:  # Full 9-action NLHE system
-        # Action values: [FOLD, CHECK, CALL, BET_SMALL, BET_MED, BET_LARGE, RAISE_SMALL, RAISE_MED, ALL_IN]
         action_values = jnp.where(
-            normalized_strength > 0.7,  # Solo top 5% → Premium (↑ de 0.8)  
+            normalized_strength > 0.6,  # Solo flushes/trips+ → Agresivo
             jnp.array([-0.8, 0.1, 0.2, 0.4, 0.6, 0.8, 0.5, 0.7, 1.0]) * scale_factor,
             jnp.where(
-                normalized_strength > 0.4,  # Solo top 20% → Strong (↓ de 0.6)
-                jnp.array([-0.3, 0.0, 0.1, 0.1, 0.2, 0.3, 0.1, 0.2, 0.3]) * scale_factor,
+                normalized_strength > 0.3,  # Two pair+ → Moderado  
+                jnp.array([-0.2, 0.0, 0.1, 0.1, 0.1, 0.2, 0.0, 0.1, 0.2]) * scale_factor,
                 jnp.where(
-                    normalized_strength > 0.2,  # Top 40% → Medium conservador (↓ de 0.4)
-                    jnp.array([0.0, 0.0, 0.1, 0.0, 0.1, 0.1, 0.0, 0.0, 0.1]) * scale_factor,
+                    normalized_strength > 0.15,  # One pair decente → Conservador
+                    jnp.array([0.1, 0.0, 0.1, 0.0, 0.0, 0.0, -0.1, -0.1, -0.1]) * scale_factor,
                     jnp.where(
-                        normalized_strength > 0.1,  # Bottom 40% → Fold-biased
-                        jnp.array([0.2, -0.1, 0.0, -0.1, 0.0, 0.0, -0.1, -0.1, 0.0]) * scale_factor,
-                        jnp.array([0.8, -0.3, -0.2, -0.4, -0.3, -0.2, -0.5, -0.4, -0.1]) * scale_factor  # Bottom 20% → Trash
+                        normalized_strength > 0.08,  # Pair bajo → Fold bias
+                        jnp.array([0.5, -0.2, -0.1, -0.2, -0.2, -0.2, -0.3, -0.3, -0.3]) * scale_factor,
+                        jnp.array([0.9, -0.4, -0.3, -0.5, -0.4, -0.3, -0.6, -0.5, -0.2]) * scale_factor  # Trash → Heavy fold
                     )
                 )
             )
