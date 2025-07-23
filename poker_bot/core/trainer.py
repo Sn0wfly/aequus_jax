@@ -346,7 +346,7 @@ def _cfr_step_pure(
     # ## CAMBIO CLAVE 2: Usar el motor de juego real con LUT
     # Llamar al motor de juego unificado con LUT
     payoffs, histories, game_results_batch = game_engine.unified_batch_simulation_with_lut(
-        keys, lut_keys, lut_values, lut_table_size
+        keys, jnp.array([0]), jnp.array([0]), 1
     )
     
     # Game engine outputs processed
