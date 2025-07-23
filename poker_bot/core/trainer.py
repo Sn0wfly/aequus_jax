@@ -145,18 +145,18 @@ def _compute_hand_strength_fixed_size(all_cards: jnp.ndarray, valid_mask: jnp.nd
     
     # Scoring jerárquico de poker
     strength = jnp.where(
-        quads > 0, 0.95,  # Four of a kind
+        quads > 0, 0.95,  # Four of a kind (muy raro)
         jnp.where(
-            (trips > 0) & (pairs > 0), 0.85,  # Full house
+            (trips > 0) & (pairs > 0), 0.85,  # Full house (raro)
             jnp.where(
-                is_flush, 0.75,  # Flush
+                is_flush, 0.75,  # Flush (poco común)
                 jnp.where(
-                    trips > 0, 0.65,  # Three of a kind
+                    trips > 0, 0.45,  # Three of a kind (↓ de 0.65)
                     jnp.where(
-                        pairs >= 2, 0.5,  # Two pair
+                        pairs >= 2, 0.25,  # Two pair (↓ de 0.5)
                         jnp.where(
-                            pairs == 1, 0.3 + high_card * 0.15,  # One pair
-                            high_card * 0.25  # High card
+                            pairs == 1, 0.12 + high_card * 0.06,  # One pair (↓ mucho)
+                            high_card * 0.08  # High card (↓ de 0.25)
                         )
                     )
                 )
@@ -270,7 +270,7 @@ def _compute_real_cfr_regrets(
     #jax.debug.print("🔍 regrets: min={}, max={}", jnp.min(regrets), jnp.max(regrets))
 
     # VERY CONSERVATIVE CLIPPING
-    regrets = jnp.clip(regrets, -0.05, 0.05)
+    # regrets = jnp.clip(regrets, -0.05, 0.05)  # Removed - too aggressive
     
     return regrets
 
