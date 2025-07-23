@@ -38,7 +38,7 @@ class TrainerConfig:
     
     # Hybrid CFR+ parameters
     discount_factor: float = 0.9995  # Regret discounting factor (CFR-γ)
-    use_cfr_plus: bool = True        # Enable CFR+ pruning
+    use_cfr_plus: bool = False        # Enable CFR+ pruning
     use_regret_discounting: bool = True  # Enable regret discounting
     
     # MC-CFR parameters
