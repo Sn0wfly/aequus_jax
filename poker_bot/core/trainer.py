@@ -205,25 +205,23 @@ def _compute_real_cfr_regrets(
     pot_value = jnp.squeeze(pot_size)
     player_payoff = game_payoffs[player_idx]
     
-    # MUCH MORE CONSERVATIVE NORMALIZATION
-    # Use a very small scale to prevent explosion
-    scale_factor = 2.0  # Very small scale
-    
-    # Define action values based on hand strength (CONSERVATIVE SCALE)
-    if num_actions == 9:  # Full 9-action NLHE system
+    # NUEVOS valores más balanceados
+    scale_factor = 0.8  # REDUCIDO de 2.0
+
+    if num_actions == 9:  # Full 9-action system
         action_values = jnp.where(
-            normalized_strength > 0.6,  # Solo flushes/trips+ → Agresivo
-            jnp.array([-0.8, 0.1, 0.2, 0.4, 0.6, 0.8, 0.5, 0.7, 1.0]) * scale_factor,
+            normalized_strength > 0.7,  # Premium hands
+            jnp.array([-1.0, -0.2, 0.1, 0.3, 0.5, 0.7, 0.4, 0.6, 0.8]) * scale_factor,
             jnp.where(
-                normalized_strength > 0.3,  # Two pair+ → Moderado  
-                jnp.array([-0.2, 0.0, 0.1, 0.1, 0.1, 0.2, 0.0, 0.1, 0.2]) * scale_factor,
+                normalized_strength > 0.45,  # Strong hands  
+                jnp.array([-0.5, 0.0, 0.2, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1]) * scale_factor,
                 jnp.where(
-                    normalized_strength > 0.15,  # One pair decente → Conservador
-                    jnp.array([0.1, 0.0, 0.1, 0.0, 0.0, 0.0, -0.1, -0.1, -0.1]) * scale_factor,
+                    normalized_strength > 0.25,  # Medium hands
+                    jnp.array([0.0, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4]) * scale_factor,
                     jnp.where(
-                        normalized_strength > 0.08,  # Pair bajo → Fold bias
-                        jnp.array([0.5, -0.2, -0.1, -0.2, -0.2, -0.2, -0.3, -0.3, -0.3]) * scale_factor,
-                        jnp.array([0.9, -0.4, -0.3, -0.5, -0.4, -0.3, -0.6, -0.5, -0.2]) * scale_factor  # Trash → Heavy fold
+                        normalized_strength > 0.12,  # Weak hands
+                        jnp.array([0.3, 0.2, 0.0, -0.2, -0.3, -0.4, -0.5, -0.6, -0.7]) * scale_factor,
+                        jnp.array([0.6, 0.0, -0.2, -0.4, -0.5, -0.6, -0.7, -0.8, -0.9]) * scale_factor  # Trash
                     )
                 )
             )
@@ -433,7 +431,7 @@ def _cfr_step_pure(
     )
     
     # CRITICAL FIX: Use a decaying learning rate for stability
-    learning_rate = 0.005 #config.learning_rate # Constant learning rate
+    learning_rate = 0.002 #config.learning_rate # Constant learning rate
     regret_updates = regret_updates * learning_rate
     
     # Actualizar regrets con nueva información
