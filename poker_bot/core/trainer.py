@@ -100,43 +100,71 @@ def _evaluate_hand_simple_pure(hole_cards: jnp.ndarray) -> jnp.ndarray:
 
 @jax.jit
 def _evaluate_7card_simple(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
-    """Evaluación rápida de 7 cartas sin LUT pesada."""
-    # Combinar todas las cartas válidas
+    """Evaluación rápida de 7 cartas compatible con JAX JIT."""
+    # Combinar todas las cartas (siempre 7 elementos)
     all_cards = jnp.concatenate([hole_cards, community_cards])
-    valid_cards = all_cards[all_cards >= 0]  # Solo cartas válidas
     
-    ranks = valid_cards // 4
-    suits = valid_cards % 4
+    # Máscara para cartas válidas (>= 0)
+    valid_mask = all_cards >= 0
+    num_valid = jnp.sum(valid_mask)
     
-    # Contar rangos y palos
-    rank_counts = jnp.bincount(ranks, length=13)
-    suit_counts = jnp.bincount(suits, length=4)
+    # Si hay menos de 2 cartas válidas, retornar fuerza mínima
+    strength = jnp.where(
+        num_valid < 2,
+        0.1,  # Fuerza mínima
+        _compute_hand_strength_fixed_size(all_cards, valid_mask)
+    )
     
-    # Detección de manos
+    return jnp.clip(strength, 0.0, 1.0)
+
+@jax.jit 
+def _compute_hand_strength_fixed_size(all_cards: jnp.ndarray, valid_mask: jnp.ndarray) -> jnp.ndarray:
+    """Computa fuerza de mano con arrays de tamaño fijo."""
+    # Procesar solo cartas válidas usando máscaras
+    ranks = jnp.where(valid_mask, all_cards // 4, 0)
+    suits = jnp.where(valid_mask, all_cards % 4, 0)
+    
+    # Contar rangos (0-12) y palos (0-3)
+    rank_counts = jnp.zeros(13)
+    suit_counts = jnp.zeros(4)
+    
+    # Acumular conteos usando scatter_add
+    for i in range(7):  # Procesar las 7 posiciones
+        rank_counts = rank_counts.at[ranks[i]].add(jnp.where(valid_mask[i], 1, 0))
+        suit_counts = suit_counts.at[suits[i]].add(jnp.where(valid_mask[i], 1, 0))
+    
+    # Analizar mano
     max_rank_count = jnp.max(rank_counts)
     pairs = jnp.sum(rank_counts == 2)
+    trips = jnp.sum(rank_counts == 3)
+    quads = jnp.sum(rank_counts == 4)
     is_flush = jnp.any(suit_counts >= 5)
-    high_card = jnp.max(ranks) / 12.0
     
-    # Scoring simple pero efectivo
+    # Carta más alta (normalizada)
+    high_card = jnp.max(jnp.where(valid_mask, ranks, 0)) / 12.0
+    
+    # Scoring jerárquico de poker
     strength = jnp.where(
-        max_rank_count >= 4, 0.95,  # Poker
+        quads > 0, 0.95,  # Four of a kind
         jnp.where(
-            max_rank_count == 3, 0.75 + pairs * 0.1,  # Full/Trio
+            (trips > 0) & (pairs > 0), 0.85,  # Full house
             jnp.where(
-                is_flush, 0.65,  # Color
+                is_flush, 0.75,  # Flush
                 jnp.where(
-                    pairs >= 2, 0.5,  # Dobles
+                    trips > 0, 0.65,  # Three of a kind
                     jnp.where(
-                        pairs == 1, 0.35 + high_card * 0.1,  # Par
-                        high_card * 0.3  # Carta alta
+                        pairs >= 2, 0.5,  # Two pair
+                        jnp.where(
+                            pairs == 1, 0.3 + high_card * 0.15,  # One pair
+                            high_card * 0.25  # High card
+                        )
                     )
                 )
             )
         )
     )
     
-    return jnp.clip(strength, 0.0, 1.0)
+    return strength
 
 @partial(jax.jit, static_argnames=("num_actions",))
 def _compute_real_cfr_regrets(
