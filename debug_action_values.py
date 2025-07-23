@@ -95,3 +95,28 @@ except Exception as e:
     print(f"❌ Error testing flush: {e}")
     import traceback
     traceback.print_exc()
+
+
+print("\n🔍 TESTING INFO SET COLLISION:")
+print("=" * 40)
+
+from poker_bot.core.bucketing import compute_info_set_id
+
+# Test collision between flush y mano débil
+weak_cards = jnp.array([29, 6])  # Mano débil
+flush_cards = jnp.array([37, 13])  # Flush problemático  
+community = jnp.array([41, 31, 26, 49, 5])
+pot = jnp.array([50.0])
+
+weak_info_set = compute_info_set_id(weak_cards, community, 0, pot)
+flush_info_set = compute_info_set_id(flush_cards, community, 0, pot)
+
+print(f"Weak hand info set:  {weak_info_set}")
+print(f"Flush hand info set: {flush_info_set}")
+
+if weak_info_set == flush_info_set:
+    print("❌ COLLISION DETECTED! Same info set for different hands!")
+    print("   This explains the fold-flush bug!")
+else:
+    print("✅ No collision - different info sets")
+    print("   Bug must be elsewhere...")
