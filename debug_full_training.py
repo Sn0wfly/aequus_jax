@@ -13,12 +13,14 @@ print(f"📊 Config:")
 print(f"  Learning rate: {config.learning_rate}")
 print(f"  Batch size: {config.batch_size}")
 
-# Estado inicial
-regrets = jnp.zeros((50000, 9))
-strategy = jnp.ones((50000, 9)) / 9
+# Estado inicial - usar las dimensiones correctas del config
+regrets = jnp.zeros((config.max_info_sets, 9))
+strategy = jnp.ones((config.max_info_sets, 9)) / 9
 
-print(f"\n🎯 Info Set 26027 estado inicial:")
-initial_regrets = regrets[26027]
+print(f"\n🎯 Info Set después de modulo:")
+target_info_set = 26027 % config.max_info_sets  # Aplicar mismo mapeo que bucketing
+print(f"  Original: 26027 → Mapped: {target_info_set}")
+initial_regrets = regrets[target_info_set]
 print(f"  Initial regrets: {jnp.max(jnp.abs(initial_regrets)):.6f} (debería ser 0)")
 
 # Ejecutar UNA iteración completa de _cfr_step_pure
@@ -28,8 +30,8 @@ key = jax.random.PRNGKey(42)
 # CRITICAL: Llamar la función REAL de training
 updated_regrets, updated_strategy = _cfr_step_pure(regrets, strategy, key, config)
 
-print(f"\n📈 Info Set 26027 después de 1 iteración:")
-final_regrets = updated_regrets[26027]
+print(f"\n📈 Info Set {target_info_set} después de 1 iteración:")
+final_regrets = updated_regrets[target_info_set]
 regret_changes = final_regrets - initial_regrets
 
 actions = ["FOLD", "CHECK", "CALL", "BET_SMALL", "BET_MED", "BET_LARGE", "RAISE_SMALL", "RAISE_MED", "ALL_IN"]
@@ -63,7 +65,7 @@ print(f"  Cobertura por iteración: {non_zero_changes/regrets.shape[0]*100:.2f}%
 
 # Verificar si nuestro info set específico fue tocado
 info_set_touched = jnp.any(jnp.abs(regret_changes) > 0.001)
-print(f"  Info set 26027 fue modificado: {info_set_touched}")
+print(f"  Info set {target_info_set} fue modificado: {info_set_touched}")
 
 if info_set_touched:
     print(f"  ✅ El info set SÍ se entrenó en esta iteración")
