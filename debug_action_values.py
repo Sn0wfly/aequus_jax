@@ -120,3 +120,47 @@ if weak_info_set == flush_info_set:
 else:
     print("✅ No collision - different info sets")
     print("   Bug must be elsewhere...")
+
+
+print("\n🔍 TESTING STORED STRATEGY:")
+print("=" * 40)
+
+# Cargar modelo entrenado
+try:
+    import pickle
+    with open('models/trainerfix.pkl', 'rb') as f:
+        model = pickle.load(f)
+    
+    strategy = model['strategy']
+    regrets = model['regrets']
+    
+    # Estrategia para flush info set
+    flush_info_set = 4015
+    flush_strategy = strategy[flush_info_set]
+    flush_regrets = regrets[flush_info_set]
+    
+    print(f"Info Set {flush_info_set} (flush) stored strategy:")
+    actions = ["FOLD", "CHECK", "CALL", "BET_SMALL", "BET_MED", "BET_LARGE", "RAISE_SMALL", "RAISE_MED", "ALL_IN"]
+    
+    for i, (action, prob, regret) in enumerate(zip(actions, flush_strategy, flush_regrets)):
+        print(f"  {action:12}: prob={prob:6.3f}, regret={regret:8.3f}")
+    
+    fold_prob = flush_strategy[0]
+    allin_prob = flush_strategy[8]
+    
+    print(f"\n🚨 Strategy Check:")
+    print(f"  FOLD prob: {fold_prob:.3f}")
+    print(f"  ALL_IN prob: {allin_prob:.3f}")
+    
+    if fold_prob > allin_prob:
+        print(f"  ❌ STORED STRATEGY IS BROKEN!")
+        print(f"      Regrets are correct but strategy is wrong!")
+    else:
+        print(f"  ✅ Stored strategy prefers ALL_IN over FOLD")
+        
+    # Check if strategy is still uniform (untrained)
+    uniform_check = abs(fold_prob - 1/9) < 0.05
+    print(f"  Strategy uniform? {uniform_check} (fold_prob ≈ 0.111)")
+
+except Exception as e:
+    print(f"❌ Error loading model: {e}")
