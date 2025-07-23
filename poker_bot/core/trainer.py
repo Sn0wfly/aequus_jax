@@ -100,7 +100,7 @@ def _evaluate_hand_simple_pure(hole_cards: jnp.ndarray) -> jnp.ndarray:
 
 @jax.jit
 def _evaluate_7card_simple(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
-    """Evaluación rápida de 7 cartas compatible con JAX JIT."""
+    """Evaluación rápida de 7 cartas compatible con JAX JIT.."""
     # Combinar todas las cartas (siempre 7 elementos)
     all_cards = jnp.concatenate([hole_cards, community_cards])
     
