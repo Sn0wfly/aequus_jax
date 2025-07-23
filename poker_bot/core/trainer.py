@@ -409,7 +409,7 @@ def _cfr_step_pure(
     
     # CRITICAL FIX: Accumulate regret updates instead of averaging to prevent cancellation
     # CFR requires accumulating regret information from all games, not normalizing
-    regret_updates = jnp.sum(batch_regret_updates, axis=0)
+    regret_updates = jnp.mean(batch_regret_updates, axis=0)
     
     # SAFEGUARD: Validate regret magnitude to prevent zero-learning bugs
     regret_magnitude = jnp.sum(jnp.abs(regret_updates))
