@@ -164,3 +164,22 @@ try:
 
 except Exception as e:
     print(f"❌ Error loading model: {e}")
+
+
+print("\n🔍 TESTING LEARNING RATE DECAY:")
+print("=" * 40)
+
+import math
+
+learning_rate_base = 0.02
+iterations = [1000, 10000, 20000, 50000]
+
+for iter_num in iterations:
+    lr = learning_rate_base / math.sqrt(iter_num + 1)
+    print(f"Iteration {iter_num:5d}: LR = {lr:.8f}")
+
+print(f"\n🚨 At 50K iterations:")
+final_lr = learning_rate_base / math.sqrt(50000 + 1) 
+print(f"   Learning rate: {final_lr:.8f}")
+print(f"   Effective regret update: {final_lr * 1.222:.8f}")
+print(f"   This is practically ZERO!")
