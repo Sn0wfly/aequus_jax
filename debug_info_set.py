@@ -3,6 +3,26 @@ import pickle
 import jax.numpy as jnp
 from poker_bot.core.bucketing import compute_info_set_id
 
+# TESTING: verificar collision de info sets
+print("🔍 TESTING INFO SET COLLISIONS:")
+
+test_hands = [
+    (jnp.array([51, 47]), "AA"),    # Pocket Aces
+    (jnp.array([23, 0]), "72o"),    # Worst hand  
+    (jnp.array([29, 6]), "Test"),   # Mano del problema
+    (jnp.array([44, 45]), "KK"),    # Pocket Kings
+]
+
+comm_cards = jnp.array([34, 11, 3, 19, 41])
+pot_size = jnp.array([50.0])
+
+for hole, name in test_hands:
+    info_id = compute_info_set_id(hole, comm_cards, 0, pot_size)
+    print(f"  {name:4}: info_set = {info_id}")
+
+print(f"⚠️  ¿Múltiples hands → mismo info set? ¡COLLISION!")
+print()
+
 # Cargar modelo entrenado
 with open('models/final_conservative.pkl', 'rb') as f:
     model = pickle.load(f)
