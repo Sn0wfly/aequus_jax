@@ -6,15 +6,8 @@ from poker_bot.core.trainer import _cfr_step_pure, TrainerConfig
 print("🔍 FULL TRAINING LOOP DEBUG:")
 print("=" * 50)
 
-# Setup inicial idéntico al trainer real
-config = TrainerConfig(
-    batch_size=128,
-    num_actions=9,
-    max_info_sets=50000,
-    learning_rate=0.02,
-    use_cfr_plus=False,
-    use_regret_discounting=False
-)
+# Setup inicial idéntico al trainer real - LEER DESDE YAML
+config = TrainerConfig.from_yaml('config/training_config.yaml')
 
 print(f"📊 Config:")
 print(f"  Learning rate: {config.learning_rate}")
