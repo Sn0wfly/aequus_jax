@@ -98,6 +98,74 @@ def _evaluate_hand_simple_pure(hole_cards: jnp.ndarray) -> jnp.ndarray:
     
     return rank_value + pair_bonus + suited_bonus
 
+@jax.jit
+def _evaluate_7card_simple(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
+    """Evaluación rápida de 7 cartas compatible con JAX JIT.."""
+    # Combinar todas las cartas (siempre 7 elementos)
+    all_cards = jnp.concatenate([hole_cards, community_cards])
+    
+    # Máscara para cartas válidas (>= 0)
+    valid_mask = all_cards >= 0
+    num_valid = jnp.sum(valid_mask)
+    
+    # Si hay menos de 2 cartas válidas, retornar fuerza mínima
+    strength = jnp.where(
+        num_valid < 2,
+        0.1,  # Fuerza mínima
+        _compute_hand_strength_fixed_size(all_cards, valid_mask)
+    )
+    
+    return jnp.clip(strength, 0.0, 1.0)
+
+@jax.jit 
+def _compute_hand_strength_fixed_size(all_cards: jnp.ndarray, valid_mask: jnp.ndarray) -> jnp.ndarray:
+    """Computa fuerza de mano con arrays de tamaño fijo."""
+    # Procesar solo cartas válidas usando máscaras
+    ranks = jnp.where(valid_mask, all_cards // 4, 0)
+    suits = jnp.where(valid_mask, all_cards % 4, 0)
+    
+    # Contar rangos (0-12) y palos (0-3)
+    rank_counts = jnp.zeros(13)
+    suit_counts = jnp.zeros(4)
+    
+    # Acumular conteos usando scatter_add
+    for i in range(7):  # Procesar las 7 posiciones
+        rank_counts = rank_counts.at[ranks[i]].add(jnp.where(valid_mask[i], 1, 0))
+        suit_counts = suit_counts.at[suits[i]].add(jnp.where(valid_mask[i], 1, 0))
+    
+    # Analizar mano
+    max_rank_count = jnp.max(rank_counts)
+    pairs = jnp.sum(rank_counts == 2)
+    trips = jnp.sum(rank_counts == 3)
+    quads = jnp.sum(rank_counts == 4)
+    is_flush = jnp.any(suit_counts >= 5)
+    
+    # Carta más alta (normalizada)
+    high_card = jnp.max(jnp.where(valid_mask, ranks, 0)) / 12.0
+    
+    # Scoring jerárquico de poker
+    strength = jnp.where(
+        quads > 0, 0.95,  # Four of a kind (muy raro)
+        jnp.where(
+            (trips > 0) & (pairs > 0), 0.85,  # Full house (raro)
+            jnp.where(
+                is_flush, 0.75,  # Flush (poco común)
+                jnp.where(
+                    trips > 0, 0.45,  # Three of a kind (↓ de 0.65)
+                    jnp.where(
+                        pairs >= 2, 0.25,  # Two pair (↓ de 0.5)
+                        jnp.where(
+                            pairs == 1, 0.12 + high_card * 0.06,  # One pair (↓ mucho)
+                            high_card * 0.08  # High card (↓ de 0.25)
+                        )
+                    )
+                )
+            )
+        )
+    )
+    
+    return strength
+
 @partial(jax.jit, static_argnames=("num_actions",))
 def _compute_real_cfr_regrets(
     hole_cards: jnp.ndarray,
@@ -130,9 +198,7 @@ def _compute_real_cfr_regrets(
     # Get current strategy for this info set
     current_strategy = strategy[info_set_id]
     
-    # Compute hand strength for value estimation
-    hand_strength = _evaluate_hand_simple_pure(hole_cards)
-    normalized_strength = hand_strength / 10000.0
+    normalized_strength = _evaluate_7card_simple(hole_cards, community_cards)
     
     # Compute counterfactual values for each action
     # This is a simplified but realistic CFR computation
@@ -141,24 +207,23 @@ def _compute_real_cfr_regrets(
     
     # MUCH MORE CONSERVATIVE NORMALIZATION
     # Use a very small scale to prevent explosion
-    scale_factor = 0.01  # Very small scale
+    scale_factor = 2.0  # Very small scale
     
     # Define action values based on hand strength (CONSERVATIVE SCALE)
     if num_actions == 9:  # Full 9-action NLHE system
-        # Action values: [FOLD, CHECK, CALL, BET_SMALL, BET_MED, BET_LARGE, RAISE_SMALL, RAISE_MED, ALL_IN]
         action_values = jnp.where(
-            normalized_strength > 0.8,  # Very strong hands
-            jnp.array([-0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 0.7, 0.9, 1.0]) * scale_factor,
+            normalized_strength > 0.6,  # Solo flushes/trips+ → Agresivo
+            jnp.array([-0.8, 0.1, 0.2, 0.4, 0.6, 0.8, 0.5, 0.7, 1.0]) * scale_factor,
             jnp.where(
-                normalized_strength > 0.6,  # Strong hands
-                jnp.array([-0.2, 0.1, 0.2, 0.3, 0.4, 0.5, 0.4, 0.6, 0.7]) * scale_factor,
+                normalized_strength > 0.3,  # Two pair+ → Moderado  
+                jnp.array([-0.2, 0.0, 0.1, 0.1, 0.1, 0.2, 0.0, 0.1, 0.2]) * scale_factor,
                 jnp.where(
-                    normalized_strength > 0.4,  # Medium hands
-                    jnp.array([-0.3, 0.0, 0.1, 0.2, 0.3, 0.4, 0.2, 0.3, 0.5]) * scale_factor,
+                    normalized_strength > 0.15,  # One pair decente → Conservador
+                    jnp.array([0.1, 0.0, 0.1, 0.0, 0.0, 0.0, -0.1, -0.1, -0.1]) * scale_factor,
                     jnp.where(
-                        normalized_strength > 0.2,  # Weak hands
-                        jnp.array([-0.4, 0.0, 0.0, 0.1, 0.2, 0.3, 0.1, 0.2, 0.3]) * scale_factor,
-                        jnp.array([-0.5, 0.0, 0.0, 0.0, 0.1, 0.2, 0.0, 0.1, 0.2]) * scale_factor  # Very weak hands
+                        normalized_strength > 0.08,  # Pair bajo → Fold bias
+                        jnp.array([0.5, -0.2, -0.1, -0.2, -0.2, -0.2, -0.3, -0.3, -0.3]) * scale_factor,
+                        jnp.array([0.9, -0.4, -0.3, -0.5, -0.4, -0.3, -0.6, -0.5, -0.2]) * scale_factor  # Trash → Heavy fold
                     )
                 )
             )
@@ -187,16 +252,24 @@ def _compute_real_cfr_regrets(
         )
     
     # VERY CONSERVATIVE CLIPPING
-    action_values = jnp.clip(action_values, -0.1, 0.1)
-    
+    #action_values = jnp.clip(action_values, -10.0, 10.0)
+
+    # DEBUG: Print action values
+    #jax.debug.print("🔍 action_values: min={}, max={}, mean={}", 
+    #                jnp.min(action_values), jnp.max(action_values), jnp.mean(action_values))
+
     # Compute actual value (weighted average of action values by current strategy)
     actual_value = jnp.sum(action_values * current_strategy)
-    
+    #jax.debug.print("🔍 actual_value: {}", actual_value)
+    #jax.debug.print("🔍 current_strategy: min={}, max={}, mean={}", 
+    #                jnp.min(current_strategy), jnp.max(current_strategy), jnp.mean(current_strategy))
+
     # Compute regrets: counterfactual_value - actual_value
     regrets = action_values - actual_value
-    
+    #jax.debug.print("🔍 regrets: min={}, max={}", jnp.min(regrets), jnp.max(regrets))
+
     # VERY CONSERVATIVE CLIPPING
-    regrets = jnp.clip(regrets, -0.05, 0.05)
+    # regrets = jnp.clip(regrets, -0.05, 0.05)  # Removed - too aggressive
     
     return regrets
 
@@ -272,13 +345,13 @@ def _update_regrets_for_game_pure(
     # Return only the updates (difference from zero table)
     regret_updates = updated_regrets - zero_regrets
     
-    # DEBUG: Add debugging to see what's happening
-    jax.debug.print("🔍 _update_regrets_for_game_pure debugging:")
-    jax.debug.print("  info_set_indices: {}", info_set_indices)
-    jax.debug.print("  sampling_mask: {}", sampling_mask)
-    jax.debug.print("  all_action_regrets magnitude: {}", jnp.sum(jnp.abs(all_action_regrets)))
-    jax.debug.print("  masked_regrets magnitude: {}", jnp.sum(jnp.abs(masked_regrets)))
-    jax.debug.print("  regret_updates magnitude: {}", jnp.sum(jnp.abs(regret_updates)))
+    # DEBUG: Add debugging to see what's happening.
+    #jax.debug.print("🔍 _update_regrets_for_game_pure debugging:")
+    #jax.debug.print("  info_set_indices: {}", info_set_indices)
+    #jax.debug.print("  sampling_mask: {}", sampling_mask)
+    #jax.debug.print("  all_action_regrets magnitude: {}", jnp.sum(jnp.abs(all_action_regrets)))
+    #jax.debug.print("  masked_regrets magnitude: {}", jnp.sum(jnp.abs(masked_regrets)))
+    #jax.debug.print("  regret_updates magnitude: {}", jnp.sum(jnp.abs(regret_updates)))
     
     return regret_updates
 
@@ -288,10 +361,7 @@ def _cfr_step_pure(
     regrets: jnp.ndarray,
     strategy: jnp.ndarray,
     key: jax.Array,
-    config: TrainerConfig,
-    lut_keys: jnp.ndarray,
-    lut_values: jnp.ndarray, 
-    lut_table_size: int
+    config: TrainerConfig
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Paso de entrenamiento CFR+ completamente puro usando el motor de juego real.
@@ -303,7 +373,7 @@ def _cfr_step_pure(
     # ## CAMBIO CLAVE 2: Usar el motor de juego real con LUT
     # Llamar al motor de juego unificado con LUT
     payoffs, histories, game_results_batch = game_engine.unified_batch_simulation_with_lut(
-        keys, lut_keys, lut_values, lut_table_size
+        keys, jnp.array([0]), jnp.array([0]), 1
     )
     
     # Game engine outputs processed
@@ -339,21 +409,21 @@ def _cfr_step_pure(
     
     # CRITICAL FIX: Accumulate regret updates instead of averaging to prevent cancellation
     # CFR requires accumulating regret information from all games, not normalizing
-    regret_updates = jnp.sum(batch_regret_updates, axis=0)
+    regret_updates = jnp.mean(batch_regret_updates, axis=0)
     
     # SAFEGUARD: Validate regret magnitude to prevent zero-learning bugs
     regret_magnitude = jnp.sum(jnp.abs(regret_updates))
-    jax.debug.print("🛡️  SAFEGUARD: Regret magnitude validation:")
-    jax.debug.print("  regret_updates magnitude: min={}, max={}, total={}",
-                    jnp.min(regret_updates), jnp.max(regret_updates), regret_magnitude)
+    #jax.debug.print("🛡️  SAFEGUARD: Regret magnitude validation:")
+    #jax.debug.print("  regret_updates magnitude: min={}, max={}, total={}",
+    #                jnp.min(regret_updates), jnp.max(regret_updates), regret_magnitude)
     
     # Critical check: Warn if regret updates are suspiciously small
-    jax.debug.print("⚠️  Zero-learning check: magnitude < 0.001? {}", regret_magnitude < 0.001)
+    #jax.debug.print("⚠️  Zero-learning check: magnitude < 0.001? {}", regret_magnitude < 0.001)
     
     # DEBUG: Log final aggregated result
-    jax.debug.print("🎯 Final Aggregation:")
-    jax.debug.print("  regret_updates magnitude: min={}, max={}, sum={}",
-                    jnp.min(regret_updates), jnp.max(regret_updates), regret_magnitude)
+    #jax.debug.print("🎯 Final Aggregation:")
+    #jax.debug.print("  regret_updates magnitude: min={}, max={}, sum={}",
+    #                jnp.min(regret_updates), jnp.max(regret_updates), regret_magnitude)
     
     # Aplicar descuento de regrets si está habilitado
     discounted_regrets = jnp.where(
@@ -363,14 +433,22 @@ def _cfr_step_pure(
     )
     
     # CRITICAL FIX: Use a reasonable learning rate instead of ultraconservative
-    learning_rate = 0.1  # Increased from 0.001 for faster learning
+    learning_rate = config.learning_rate  # Increased from 0.001 for faster learning
     regret_updates = regret_updates * learning_rate
     
     # Actualizar regrets con nueva información
     updated_regrets = discounted_regrets + regret_updates
     
     # CRITICAL FIX: Use reasonable clipping instead of ultraconservative
-    updated_regrets = jnp.clip(updated_regrets, -1.0, 1.0)  # Reduced clipping to concentrate regrets  # Increased from ±0.05
+    #updated_regrets = jnp.clip(updated_regrets, -5.0, 5.0)
+    
+    # Pruning agresivo tipo Pluribus: eliminar regrets muy negativos
+    extremely_negative_mask = updated_regrets < -2.0
+    updated_regrets = jnp.where(
+        extremely_negative_mask,
+        jnp.zeros_like(updated_regrets),
+        updated_regrets
+    )
     
     # Aplicar poda CFR+: establecer regrets negativos a cero
     if config.use_cfr_plus:
@@ -544,8 +622,7 @@ class PokerTrainer:
             
             # Perform CFR step with MC-CFR sampling
             self.regrets, self.strategy = _cfr_step_pure(
-                self.regrets, self.strategy, iter_key, self.config,
-                self.lut_keys_jax, self.lut_values_jax, self.lut_table_size
+                self.regrets, self.strategy, iter_key, self.config
             )
             
             self.iteration += 1
@@ -565,11 +642,15 @@ class PokerTrainer:
             if i % self.config.log_interval == 0:
                 logger.info(f"📊 Iteration {i}: regret={regret_magnitude:.4f}, entropy={strategy_entropy:.4f}, time={iter_time:.3f}s")
             
-            # Save checkpoint
-            if i % self.config.save_interval == 0:
+            # Save checkpoint (no guardar en iteración 0)
+            if i > 0 and i % self.config.save_interval == 0:
                 checkpoint_path = f"{save_path}_iter_{i}.pkl"
                 self.save_model(checkpoint_path)
                 logger.info(f"💾 Saved checkpoint: {checkpoint_path}")
+        
+        # Guardar siempre el modelo final al terminar
+        self.save_model(save_path)
+        logger.info(f"💾 Final model saved to {save_path}")
         
         total_time = time.time() - start_time
         logger.info(f"✅ Training completed in {total_time:.2f}s")
