@@ -128,7 +128,7 @@ print("=" * 40)
 # Cargar modelo entrenado
 try:
     import pickle
-    with open('models/trainerfix.pkl', 'rb') as f:
+    with open('models/constant_lr_50k.pkl', 'rb') as f:
         model = pickle.load(f)
     
     strategy = model['strategy']
