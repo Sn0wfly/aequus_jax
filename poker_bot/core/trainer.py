@@ -206,7 +206,7 @@ def _compute_real_cfr_regrets(
     player_payoff = game_payoffs[player_idx]
     
     # NUEVOS valores más balanceados
-    scale_factor = 0.8  # REDUCIDO de 2.0
+    scale_factor = 1.2  # REDUCIDO de 2.0
 
     if num_actions == 9:  # Full 9-action system
         action_values = jnp.where(
@@ -431,7 +431,7 @@ def _cfr_step_pure(
     )
     
     # CRITICAL FIX: Use a decaying learning rate for stability
-    learning_rate = 0.002 #config.learning_rate # Constant learning rate
+    learning_rate = 0.003 #config.learning_rate # Constant learning rate
     regret_updates = regret_updates * learning_rate
     
     # Actualizar regrets con nueva información
