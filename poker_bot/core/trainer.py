@@ -206,23 +206,23 @@ def _compute_real_cfr_regrets(
     player_payoff = game_payoffs[player_idx]
     
     # NUEVOS valores más balanceados
-    scale_factor = 1.2  # REDUCIDO de 2.0
+    scale_factor = 2.5  # REDUCIDO de 2.0
 
     if num_actions == 9:  # Full 9-action system
         action_values = jnp.where(
-            normalized_strength > 0.7,  # Premium hands
-            jnp.array([-1.0, -0.2, 0.1, 0.3, 0.5, 0.7, 0.4, 0.6, 0.8]) * scale_factor,
+            normalized_strength > 0.7,  # NUTS hands
+            jnp.array([-3.0, -1.0, 0.0, 1.0, 2.0, 3.0, 2.5, 3.5, 4.0]) * scale_factor,
             jnp.where(
                 normalized_strength > 0.45,  # Strong hands  
-                jnp.array([-0.5, 0.0, 0.2, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1]) * scale_factor,
+                jnp.array([-1.0, 0.0, 0.5, 1.0, 1.5, 2.0, 1.0, 1.5, 1.8]) * scale_factor,
                 jnp.where(
                     normalized_strength > 0.25,  # Medium hands
-                    jnp.array([0.0, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4]) * scale_factor,
+                    jnp.array([0.5, 1.0, 0.8, 0.5, 0.0, -0.5, -1.0, -1.5, -2.0]) * scale_factor,
                     jnp.where(
                         normalized_strength > 0.12,  # Weak hands
-                        jnp.array([0.3, 0.2, 0.0, -0.2, -0.3, -0.4, -0.5, -0.6, -0.7]) * scale_factor,
-                        jnp.array([0.6, 0.0, -0.2, -0.4, -0.5, -0.6, -0.7, -0.8, -0.9]) * scale_factor  # Trash
-                    )
+                        jnp.array([1.5, 0.5, 0.0, -1.0, -1.5, -2.0, -2.5, -3.0, -3.5]) * scale_factor,
+                        jnp.array([3.0, -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0]) * scale_factor  # Trash
+                )
                 )
             )
         )
