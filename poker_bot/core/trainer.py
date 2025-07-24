@@ -206,26 +206,26 @@ def _compute_real_cfr_regrets(
     player_payoff = game_payoffs[player_idx]
     
     # NUEVOS valores más balanceados
-    scale_factor = 2.5  # REDUCIDO de 2.0
+    scale_factor = 1.5  # REDUCIDO de 2.0
 
-    if num_actions == 9:  # Full 9-action system
+    if num_actions == 9:  
         action_values = jnp.where(
-            normalized_strength > 0.7,  # NUTS hands
-            jnp.array([-3.0, -1.0, 0.0, 1.0, 2.0, 3.0, 2.5, 3.5, 4.0]) * scale_factor,
+            normalized_strength > 0.7,  # NUTS (flush+)
+            jnp.array([-2.0, -0.5, 0.0, 0.5, 1.0, 1.5, 1.0, 1.2, 2.0]),
             jnp.where(
-                normalized_strength > 0.45,  # Strong hands  
-                jnp.array([-1.0, 0.0, 0.5, 1.0, 1.5, 2.0, 1.0, 1.5, 1.8]) * scale_factor,
+                normalized_strength > 0.45,  # TRIPS
+                jnp.array([-1.0, 0.0, 0.2, 0.5, 0.8, 1.0, 0.7, 0.9, 1.2]),
                 jnp.where(
-                    normalized_strength > 0.25,  # Medium hands
-                    jnp.array([0.5, 1.0, 0.8, 0.5, 0.0, -0.5, -1.0, -1.5, -2.0]) * scale_factor,
+                    normalized_strength > 0.25,  # PAIRS
+                    jnp.array([0.0, 0.5, 0.3, 0.2, 0.0, -0.2, -0.3, -0.5, -0.8]),
                     jnp.where(
-                        normalized_strength > 0.12,  # Weak hands
-                        jnp.array([1.5, 0.5, 0.0, -1.0, -1.5, -2.0, -2.5, -3.0, -3.5]) * scale_factor,
-                        jnp.array([3.0, -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0]) * scale_factor  # Trash
-                )
+                        normalized_strength > 0.12,  # WEAK PAIRS
+                        jnp.array([0.8, 0.2, 0.0, -0.5, -0.8, -1.0, -1.2, -1.5, -2.0]),
+                        jnp.array([1.5, -0.5, -1.0, -1.5, -2.0, -2.5, -3.0, -3.5, -4.0])  # TRASH
+                    )
                 )
             )
-        )
+        ) * scale_factor
     elif num_actions == 6:  # 6-action system
         # Action values: [FOLD, CHECK, CALL, BET, RAISE, ALL_IN]
         action_values = jnp.where(
@@ -431,7 +431,7 @@ def _cfr_step_pure(
     )
     
     # CRITICAL FIX: Use a decaying learning rate for stability
-    learning_rate = 0.003 #config.learning_rate # Constant learning rate
+    learning_rate = 0.004 #config.learning_rate # Constant learning rate
     regret_updates = regret_updates * learning_rate
     
     # Actualizar regrets con nueva información
