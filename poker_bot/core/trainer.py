@@ -18,7 +18,7 @@ from functools import partial
 
 from . import full_game_engine as game_engine
 from .bucketing import compute_info_set_id, validate_bucketing_system
-from .mccfr_algorithm import MCCFRConfig, mc_sampling_strategy, accumulate_regrets_fixed
+from .mccfr_algorithm import MCCFRTrainer, mc_sampling_strategy, accumulate_regrets_fixed
 
 logger = logging.getLogger(__name__)
 
@@ -166,296 +166,11 @@ def _compute_hand_strength_fixed_size(all_cards: jnp.ndarray, valid_mask: jnp.nd
     
     return strength
 
-@partial(jax.jit, static_argnames=("num_actions",))
-def _compute_real_cfr_regrets(
-    hole_cards: jnp.ndarray,
-    community_cards: jnp.ndarray,
-    player_idx: int,
-    pot_size: jnp.ndarray,
-    game_payoffs: jnp.ndarray,
-    strategy: jnp.ndarray,
-    num_actions: int
-) -> jnp.ndarray:
-    """
-    Compute real CFR regrets using counterfactual values.
-    This replaces the hardcoded heuristic patterns with actual CFR computation.
-    
-    Args:
-        hole_cards: Player's hole cards [2]
-        community_cards: Community cards [5]
-        player_idx: Player index
-        pot_size: Current pot size
-        game_payoffs: Payoffs for each player [6]
-        strategy: Current strategy for this info set [num_actions]
-        num_actions: Number of actions available
-        
-    Returns:
-        Regret vector for this info set [num_actions]
-    """
-    # Compute info set ID for this player
-    info_set_id = compute_info_set_id(hole_cards, community_cards, player_idx, pot_size)
-    
-    # Get current strategy for this info set
-    current_strategy = strategy[info_set_id]
-    
-    normalized_strength = _evaluate_7card_simple(hole_cards, community_cards)
-    
-    # Compute counterfactual values for each action
-    # This is a simplified but realistic CFR computation
-    pot_value = jnp.squeeze(pot_size)
-    player_payoff = game_payoffs[player_idx]
-    
-    # NUEVOS valores más balanceados
-    scale_factor = 2.0  # REDUCIDO de 2.0
-
-    if num_actions == 9:  
-        action_values = jnp.where(
-            normalized_strength > 0.6,  # NUTS (flush+)
-            jnp.array([-0.8, 0.1, 0.2, 0.4, 0.6, 0.8, 0.5, 0.7, 1.0]) * scale_factor,
-            jnp.where(
-                normalized_strength > 0.3,  # TRIPS
-                jnp.array([-0.2, 0.0, 0.1, 0.1, 0.1, 0.2, 0.0, 0.1, 0.2]),
-                jnp.where(
-                    normalized_strength > 0.15,  # PAIRS
-                    jnp.array([0.1, 0.0, 0.1, 0.0, 0.0, 0.0, -0.1, -0.1, -0.1]),
-                    jnp.where(
-                        normalized_strength > 0.08,  # WEAK PAIRS
-                        jnp.array([0.5, -0.2, -0.1, -0.2, -0.2, -0.2, -0.3, -0.3, -0.3]),
-                        jnp.array([0.9, -0.4, -0.3, -0.5, -0.4, -0.3, -0.6, -0.5, -0.2])  # TRASH
-                    )
-                )
-            )
-        ) * scale_factor
-    elif num_actions == 6:  # 6-action system
-        # Action values: [FOLD, CHECK, CALL, BET, RAISE, ALL_IN]
-        action_values = jnp.where(
-            normalized_strength > 0.7,
-            jnp.array([-0.1, 0.2, 0.3, 0.5, 0.7, 0.8]) * scale_factor,
-            jnp.where(
-                normalized_strength > 0.4,
-                jnp.array([-0.2, 0.1, 0.2, 0.3, 0.4, 0.5]) * scale_factor,
-                jnp.array([-0.3, 0.0, 0.1, 0.2, 0.3, 0.4]) * scale_factor
-            )
-        )
-    else:  # 3-action system
-        # Action values: [FOLD, CALL, BET]
-        action_values = jnp.where(
-            normalized_strength > 0.6,
-            jnp.array([-0.2, 0.3, 0.6]) * scale_factor,
-            jnp.where(
-                normalized_strength > 0.3,
-                jnp.array([-0.3, 0.1, 0.3]) * scale_factor,
-                jnp.array([-0.4, 0.0, 0.2]) * scale_factor
-            )
-        )
-    
-    # VERY CONSERVATIVE CLIPPING
-    #action_values = jnp.clip(action_values, -10.0, 10.0)
-
-    # DEBUG: Print action values
-    #jax.debug.print("🔍 action_values: min={}, max={}, mean={}", 
-    #                jnp.min(action_values), jnp.max(action_values), jnp.mean(action_values))
-
-    # Compute actual value (weighted average of action values by current strategy)
-    actual_value = jnp.sum(action_values * current_strategy)
-    #jax.debug.print("🔍 actual_value: {}", actual_value)
-    #jax.debug.print("🔍 current_strategy: min={}, max={}, mean={}", 
-    #                jnp.min(current_strategy), jnp.max(current_strategy), jnp.mean(current_strategy))
-
-    # Compute regrets: counterfactual_value - actual_value
-    regrets = action_values - actual_value
-    #jax.debug.print("🔍 regrets: min={}, max={}", jnp.min(regrets), jnp.max(regrets))
-
-    # VERY CONSERVATIVE CLIPPING
-    # regrets = jnp.clip(regrets, -0.05, 0.05)  # Removed - too aggressive
-    
-    return regrets
-
 ## CAMBIO CLAVE 1: Actualizar _update_regrets_for_game_pure para trabajar con resultados reales del motor de juego
-@partial(jax.jit, static_argnames=("num_actions",))
-def _update_regrets_for_game_pure(
-    regrets: jnp.ndarray,
-    strategy: jnp.ndarray,
-    game_results: Dict[str, jnp.ndarray],
-    game_payoffs: jnp.ndarray,
-    num_actions: int,
-    rng_key: jax.Array
-) -> jnp.ndarray:
-    """
-    FIXED VERSION: Real CFR regret computation with MC-CFR sampling.
-    
-    Args:
-        regrets: Tabla de regrets actual
-        strategy: Current strategy table
-        game_results: Resultados del juego real del motor de juego
-        game_payoffs: Payoffs para cada jugador [6]
-        num_actions: Número de acciones configurado dinámicamente
-        rng_key: Random key for MC sampling
-        
-    Returns:
-        Regret updates para este juego (solo los cambios, no la tabla completa)
-    """
-    # Extraer datos del juego real
-    hole_cards_batch = game_results['hole_cards']  # [6, 2]
-    community_cards = game_results['final_community']  # [5]
-    pot_size = game_results['final_pot']  # scalar
-    
-    # VECTORIZED GPU OPTIMIZATION: Procesar todos los 6 jugadores simultáneamente
-    pot_size_broadcast = jnp.full(6, pot_size)  # [6]
-    player_indices = jnp.arange(6)
-    
-    # Paso 1: Computación vectorizada de info sets
-    info_set_indices = jax.vmap(
-        lambda hole_cards, player_idx, pot: compute_info_set_id(
-            hole_cards, community_cards, player_idx, jnp.array([pot])
-        ),
-        in_axes=(0, 0, 0)
-    )(hole_cards_batch, player_indices, pot_size_broadcast)
-    
-    # Paso 2: MC-CFR sampling - only process sampled info sets
-    sampling_mask = mc_sampling_strategy(regrets, info_set_indices, rng_key)
-    
-    # Paso 3: Compute real CFR regrets for sampled info sets only
-    def compute_player_regrets(hole_cards, player_idx, pot, payoff):
-        return _compute_real_cfr_regrets(
-            hole_cards, community_cards, player_idx, jnp.array([pot]), 
-            game_payoffs, strategy, num_actions
-        )
-    
-    all_action_regrets = jax.vmap(compute_player_regrets)(
-        hole_cards_batch, player_indices, pot_size_broadcast, game_payoffs
-    )
-    
-    # Paso 4: Apply MC-CFR sampling mask and accumulate regrets properly
-    masked_regrets = jnp.where(
-        sampling_mask[:, None], 
-        all_action_regrets, 
-        jnp.zeros_like(all_action_regrets)
-    )
-    
-    # CRITICAL FIX: Return only the regret updates, not the full table
-    # Create a zero table and accumulate only the updates
-    zero_regrets = jnp.zeros_like(regrets)
-    updated_regrets = accumulate_regrets_fixed(
-        zero_regrets, info_set_indices, masked_regrets, sampling_mask
-    )
-    
-    # Return only the updates (difference from zero table)
-    regret_updates = updated_regrets - zero_regrets
-    
-    # DEBUG: Add debugging to see what's happening.
-    #jax.debug.print("🔍 _update_regrets_for_game_pure debugging:")
-    #jax.debug.print("  info_set_indices: {}", info_set_indices)
-    #jax.debug.print("  sampling_mask: {}", sampling_mask)
-    #jax.debug.print("  all_action_regrets magnitude: {}", jnp.sum(jnp.abs(all_action_regrets)))
-    #jax.debug.print("  masked_regrets magnitude: {}", jnp.sum(jnp.abs(masked_regrets)))
-    #jax.debug.print("  regret_updates magnitude: {}", jnp.sum(jnp.abs(regret_updates)))
-    
-    return regret_updates
+# [ELIMINADO] def _update_regrets_for_game_pure(...)
 
 ## CAMBIO CLAVE 2: Modificar _cfr_step_pure para aceptar la LUT y llamar al game_engine.unified_batch_simulation_with_lut
-@partial(jax.jit, static_argnames=("config",))
-def _cfr_step_pure(
-    regrets: jnp.ndarray,
-    strategy: jnp.ndarray,
-    key: jax.Array,
-    config: TrainerConfig,
-    iteration: int  # ← NUEVO
-) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """
-    Paso de entrenamiento CFR+ completamente puro usando el motor de juego real.
-    Recibe la LUT como parámetros para integración con motor de juego real.
-    """
-    # Generar keys para simulaciones reales
-    keys = jax.random.split(key, config.batch_size)
-    
-    # ## CAMBIO CLAVE 2: Usar el motor de juego real con LUT
-    # Llamar al motor de juego unificado con LUT
-    payoffs, histories, game_results_batch = game_engine.unified_batch_simulation_with_lut(
-        keys, jnp.array([0]), jnp.array([0]), 1
-    )
-    
-    # Game engine outputs processed
-    
-    # ARREGLO 2: Procesar TODOS los juegos del batch usando jax.vmap() para máximo rendimiento
-    # En lugar de desperdiciar 99.2% del batch, procesamos todos los juegos en paralelo
-    
-    # Función auxiliar para procesar un solo juego del batch
-    def process_single_game(game_idx):
-        game_payoffs_single = payoffs[game_idx]  # [6]
-        game_results_single = {
-            'hole_cards': game_results_batch['hole_cards'][game_idx],  # [6, 2]
-            'final_community': game_results_batch['final_community'][game_idx],  # [5]
-            'final_pot': game_results_batch['final_pot'][game_idx],  # scalar
-            'player_stacks': game_results_batch['player_stacks'][game_idx],  # [6]
-            'player_bets': game_results_batch['player_bets'][game_idx]  # [6]
-        }
-        
-        # Generate random key for MC sampling
-        game_key = jax.random.fold_in(key, game_idx)
-        
-        # Game processing
-        
-        return _update_regrets_for_game_pure(
-            regrets, strategy, game_results_single, game_payoffs_single, config.num_actions, game_key
-        )
-    
-    # Usar jax.vmap() para procesar TODOS los juegos del batch simultáneamente
-    batch_indices = jnp.arange(config.batch_size)
-    batch_regret_updates = jax.vmap(process_single_game)(batch_indices)
-    
-    # Batch processing completed
-    
-    # CRITICAL FIX: Accumulate regret updates instead of averaging to prevent cancellation
-    regret_updates = jnp.sum(batch_regret_updates, axis=0) / config.batch_size
-    
-    # SAFEGUARD: Validate regret magnitude to prevent zero-learning bugs
-    regret_magnitude = jnp.sum(jnp.abs(regret_updates))
-    #jax.debug.print("🛡️  SAFEGUARD: Regret magnitude validation:")
-    #jax.debug.print("  regret_updates magnitude: min={}, max={}, total={}",
-    #                jnp.min(regret_updates), jnp.max(regret_updates), regret_magnitude)
-    
-    # Critical check: Warn if regret updates are suspiciously small
-    #jax.debug.print("⚠️  Zero-learning check: magnitude < 0.001? {}", regret_magnitude < 0.001)
-    
-    # DEBUG: Log final aggregated result
-    #jax.debug.print("🎯 Final Aggregation:")
-    #jax.debug.print("  regret_updates magnitude: min={}, max={}, sum={}",
-    #                jnp.min(regret_updates), jnp.max(regret_updates), regret_magnitude)
-    
-    # Aplicar descuento de regrets si está habilitado
-    discounted_regrets = jnp.where(
-        config.use_regret_discounting,
-        regrets * config.discount_factor,
-        regrets
-    )
-    
-    # CRITICAL FIX: Use a decaying learning rate for stability
-    learning_rate = 0.005 #config.learning_rate # Constant learning rate
-    regret_updates = regret_updates * learning_rate
-    
-    # Actualizar regrets con nueva información
-    updated_regrets = discounted_regrets + regret_updates
-    
-    # CRITICAL FIX: Use reasonable clipping instead of ultraconservative
-    #updated_regrets = jnp.clip(updated_regrets, -5.0, 5.0)
-    
-    # Pruning agresivo tipo Pluribus: eliminar regrets muy negativos
-    #extremely_negative_mask = updated_regrets < -2.0
-    #updated_regrets = jnp.where(
-    #    extremely_negative_mask,
-    #    jnp.zeros_like(updated_regrets),
-    #    updated_regrets
-    #)
-    
-    # Aplicar poda CFR+: establecer regrets negativos a cero
-    if config.use_cfr_plus:
-        updated_regrets = jnp.maximum(updated_regrets, 0.0)
-    
-    # Actualizar estrategia usando regret matching
-    updated_strategy = _regret_matching_pure(updated_regrets, config)
-    
-    return updated_regrets, updated_strategy
+# [ELIMINADO] def _cfr_step_pure(...)
 
 @partial(jax.jit, static_argnames=("config",))
 def _regret_matching_pure(regrets: jnp.ndarray, config: TrainerConfig) -> jnp.ndarray:
@@ -554,8 +269,9 @@ class PokerTrainer:
         """
         self.config = config
         self.iteration = 0
-        
-        # Load hand evaluation LUT
+        # REEMPLAZO: Inicializar MCCFRTrainer
+        self.mccfr_trainer = MCCFRTrainer(config.max_info_sets, config.num_actions)
+        # Mantener carga de LUT
         self.lut_keys, self.lut_values, self.lut_table_size = load_hand_evaluation_lut(lut_path)
         
         # Convert LUT arrays to JAX for GPU compatibility (for benchmarks)
@@ -584,77 +300,37 @@ class PokerTrainer:
 
     def train(self, num_iterations: int, save_path: str) -> Dict[str, Any]:
         """
-        Train the poker AI using hybrid CFR+ with MC-CFR sampling.
-        
-        Args:
-            num_iterations: Number of training iterations
-            save_path: Base path for saving checkpoints
-            
-        Returns:
-            Training statistics
+        Train using MCCFR + CFR+ instead of broken vanilla CFR.
         """
-        logger.info(f"🚀 Starting hybrid CFR+ training with MC-CFR sampling")
-        logger.info(f"   Iterations: {num_iterations}")
-        logger.info(f"   Batch size: {self.config.batch_size}")
-        logger.info(f"   Actions: {self.config.num_actions}")
-        logger.info(f"   MC sampling rate: {self.config.mc_sampling_rate}")
-        
-        # Initialize random key
+        logger.info(f"🚀 Starting MCCFR + CFR+ training")
         key = jax.random.PRNGKey(42)
-        
-        # Training statistics
-        stats = {
-            'iterations': [],
-            'regret_magnitudes': [],
-            'strategy_entropies': [],
-            'training_times': []
-        }
-        
+        stats = {'iterations': [], 'regret_magnitudes': [], 'strategy_entropies': [], 'training_times': []}
         start_time = time.time()
-        
         for i in range(num_iterations):
             iter_start = time.time()
-            
-            # Generate iteration key
             iter_key = jax.random.fold_in(key, i)
-            
-            # Perform CFR step with iteration parameter
-            self.regrets, self.strategy = _cfr_step_pure(
-                self.regrets, self.strategy, iter_key, self.config, self.iteration
+            # USE MCCFR instead of broken CFR - FIXED CALL
+            self.mccfr_trainer, self.regrets, self.strategy = _cfr_step_with_mccfr(
+                self.mccfr_trainer, iter_key, self.config, self.iteration,
+                self.lut_keys_jax, self.lut_values_jax, self.lut_table_size
             )
-            
             self.iteration += 1
-            
-            # Compute statistics
             regret_magnitude = jnp.sum(jnp.abs(self.regrets))
             strategy_entropy = self._compute_strategy_entropy()
             iter_time = time.time() - iter_start
-            
-            # Store statistics
             stats['iterations'].append(self.iteration)
             stats['regret_magnitudes'].append(float(regret_magnitude))
             stats['strategy_entropies'].append(strategy_entropy)
             stats['training_times'].append(iter_time)
-            
-            # Logging
             if i % self.config.log_interval == 0:
-                logger.info(f"📊 Iteration {i}: regret={regret_magnitude:.4f}, entropy={strategy_entropy:.4f}, time={iter_time:.3f}s")
-            
-            # Save checkpoint (no guardar en iteración 0)
+                logger.info(f"📊 MCCFR Iteration {i}: regret={regret_magnitude:.4f}, entropy={strategy_entropy:.4f}, time={iter_time:.3f}s")
             if i > 0 and i % self.config.save_interval == 0:
                 checkpoint_path = f"{save_path}_iter_{i}.pkl"
                 self.save_model(checkpoint_path)
-                logger.info(f"💾 Saved checkpoint: {checkpoint_path}")
-        
-        # Guardar siempre el modelo final al terminar
+                logger.info(f"💾 Saved MCCFR checkpoint: {checkpoint_path}")
         self.save_model(save_path)
-        logger.info(f"💾 Final model saved to {save_path}")
-        
         total_time = time.time() - start_time
-        logger.info(f"✅ Training completed in {total_time:.2f}s")
-        logger.info(f"   Final regret magnitude: {stats['regret_magnitudes'][-1]:.4f}")
-        logger.info(f"   Final strategy entropy: {stats['strategy_entropies'][-1]:.4f}")
-        
+        logger.info(f"✅ MCCFR training completed in {total_time:.2f}s")
         return stats
 
     def _regret_matching(self, regrets: jnp.ndarray) -> jnp.ndarray:
@@ -669,36 +345,34 @@ class PokerTrainer:
         return float(jnp.mean(entropies))
 
     def save_model(self, path: str):
-        """Save model state to file."""
+        """Save MCCFR model state."""
         model_state = {
             'config': self.config,
-            'regrets': np.array(self.regrets),
-            'strategy': np.array(self.strategy),
+            'mccfr_trainer': self.mccfr_trainer,  # Save MCCFR trainer
+            'regrets': np.array(self.mccfr_trainer.regrets),
+            'strategy': np.array(self.mccfr_trainer.strategy),
             'iteration': self.iteration,
             'lut_keys': self.lut_keys,
             'lut_values': self.lut_values,
             'lut_table_size': self.lut_table_size
         }
-        
         with open(path, 'wb') as f:
             pickle.dump(model_state, f)
-        
-        logger.info(f"💾 Model saved to {path}")
+        logger.info(f"💾 MCCFR model saved to {path}")
 
     def load_model(self, path: str):
-        """Load model state from file."""
+        """Load MCCFR model state."""
         with open(path, 'rb') as f:
             model_state = pickle.load(f)
-        
         self.config = model_state['config']
+        self.mccfr_trainer = model_state['mccfr_trainer']  # Load MCCFR trainer
         self.regrets = jnp.array(model_state['regrets'])
         self.strategy = jnp.array(model_state['strategy'])
         self.iteration = model_state['iteration']
         self.lut_keys = model_state['lut_keys']
         self.lut_values = model_state['lut_values']
         self.lut_table_size = model_state['lut_table_size']
-        
-        logger.info(f"📂 Model loaded from {path}")
+        logger.info(f"📂 MCCFR model loaded from {path}")
 
     def resume_training(self, checkpoint_path: str, num_iterations: int, save_path: str) -> Dict[str, Any]:
         """
@@ -790,3 +464,73 @@ def create_trainer(config_path: Optional[str] = None) -> PokerTrainer:
     
     config = TrainerConfig.from_yaml(config_path)
     return PokerTrainer(config)
+
+@partial(jax.jit, static_argnames=("config",))
+def _cfr_step_with_mccfr(
+    mccfr_trainer: MCCFRTrainer,
+    key: jax.Array,
+    config: TrainerConfig,
+    iteration: int,
+    lut_keys: jax.Array,
+    lut_values: jax.Array,
+    lut_table_size: int
+) -> tuple[MCCFRTrainer, jax.Array, jax.Array]:
+    """
+    NEW: Use MCCFR + CFR+ instead of broken vanilla CFR.
+    """
+    # Generate keys for real game simulations
+    keys = jax.random.split(key, config.batch_size)
+
+    # Use REAL game engine with LUT - FIXED PARAMETERS
+    payoffs, histories, game_results_batch = game_engine.unified_batch_simulation_with_lut(
+        keys, lut_keys, lut_values, lut_table_size, config.num_actions
+    )
+
+    # Process all games in batch
+    def process_single_game(game_idx):
+        game_results_single = {
+            'hole_cards': game_results_batch['hole_cards'][game_idx],
+            'final_community': game_results_batch['final_community'][game_idx],
+            'final_pot': game_results_batch['final_pot'][game_idx],
+        }
+
+        # Compute info sets for all 6 players
+        hole_cards_batch = game_results_single['hole_cards']  # [6, 2]
+        community_cards = game_results_single['final_community']  # [5]
+        pot_size = game_results_single['final_pot']  # scalar
+
+        # Vectorized info set computation
+        player_indices = jnp.arange(6)
+        pot_size_broadcast = jnp.full(6, pot_size)
+
+        info_set_indices = jax.vmap(
+            lambda hole_cards, player_idx, pot: compute_info_set_id(
+                hole_cards, community_cards, player_idx, jnp.array([pot])
+            )
+        )(hole_cards_batch, player_indices, pot_size_broadcast)
+
+        # USE REAL PAYOFFS instead of hardcoded action values
+        game_payoffs = payoffs[game_idx]  # [6]
+
+        # Compute counterfactual values from REAL game payoffs
+        action_values = jnp.broadcast_to(
+            game_payoffs[:, None], 
+            (6, config.num_actions)
+        )  # [6, 9] - same payoff for all actions initially
+
+        return info_set_indices, action_values
+
+    # Process all games in batch
+    batch_indices = jnp.arange(config.batch_size)
+    batch_info_sets, batch_action_values = jax.vmap(process_single_game)(batch_indices)
+
+    # Flatten batch data for MCCFR
+    flat_info_sets = batch_info_sets.reshape(-1)  # [batch_size * 6]
+    flat_action_values = batch_action_values.reshape(-1, config.num_actions)  # [batch_size * 6, 9]
+
+    # Update MCCFR with REAL data
+    game_key = jax.random.fold_in(key, iteration)
+    mccfr_trainer.update(flat_info_sets, flat_action_values, game_key)
+
+    # Return trainer AND updated arrays for JIT efficiency
+    return mccfr_trainer, mccfr_trainer.regrets, mccfr_trainer.strategy
