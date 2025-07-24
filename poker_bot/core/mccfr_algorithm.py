@@ -82,18 +82,18 @@ def accumulate_regrets_fixed(
     action_regrets = action_regrets.astype(jnp.float32)
     sampling_mask = sampling_mask.astype(jnp.bool_)
     # DEBUG: Print dtypes to confirm
-    jax.debug.print("🔧 accumulate_regrets_fixed dtypes:")
-    jax.debug.print("  regrets: {}, info_set_indices: {}", regrets.dtype, info_set_indices.dtype)
-    jax.debug.print("  action_regrets: {}, sampling_mask: {}", action_regrets.dtype, sampling_mask.dtype)
+    # jax.debug.print("🔧 accumulate_regrets_fixed dtypes:")
+    # jax.debug.print("  regrets: {}, info_set_indices: {}", regrets.dtype, info_set_indices.dtype)
+    # jax.debug.print("  action_regrets: {}, sampling_mask: {}", action_regrets.dtype, sampling_mask.dtype)
     # Only process sampled info sets
     valid_mask = sampling_mask & (info_set_indices >= 0) & (info_set_indices < regrets.shape[0])
     # Get valid indices and regrets
     valid_indices = jnp.where(valid_mask, info_set_indices, 0)
     valid_regrets = jnp.where(valid_mask[:, None], action_regrets, jnp.zeros_like(action_regrets))
     # CRITICAL DEBUG: Check shapes before scatter_add
-    jax.debug.print("  valid_indices shape: {}, max: {}", valid_indices.shape, jnp.max(valid_indices))
-    jax.debug.print("  valid_regrets shape: {}", valid_regrets.shape)
-    jax.debug.print("  regrets.shape[0]: {}", regrets.shape[0])
+    # jax.debug.print("  valid_indices shape: {}, max: {}", valid_indices.shape, jnp.max(valid_indices))
+    # jax.debug.print("  valid_regrets shape: {}", valid_regrets.shape)
+    # jax.debug.print("  regrets.shape[0]: {}", regrets.shape[0])
     # Ensure scatter_add parameters are correct
     dimension_numbers = jax.lax.ScatterDimensionNumbers(
         update_window_dims=(1,),
@@ -109,7 +109,7 @@ def accumulate_regrets_fixed(
         indices_are_sorted=False,
         unique_indices=False
     )
-    jax.debug.print("✅ accumulate_regrets_fixed completed successfully")
+    # jax.debug.print("✅ accumulate_regrets_fixed completed successfully")
     return updated_regrets
 
 @jax.jit
@@ -220,8 +220,8 @@ def performance_benchmark(pot_size: jnp.ndarray) -> float:
 @jax.jit
 def calculate_strategy_optimized(regrets: jnp.ndarray, visited_mask: jnp.ndarray) -> jnp.ndarray:
     """OPTIMIZED: Only calculate strategy for visited info sets."""
-    jax.debug.print("🔧 calculate_strategy_optimized starting...")
-    jax.debug.print("  regrets shape: {}, visited_mask sum: {}", regrets.shape, jnp.sum(visited_mask))
+    # jax.debug.print("🔧 calculate_strategy_optimized starting...")
+    # jax.debug.print("  regrets shape: {}, visited_mask sum: {}", regrets.shape, jnp.sum(visited_mask))
     # CLAVE: Solo procesar info sets que han sido visitados
     positive_regrets = jnp.maximum(regrets, 0.0)
     sum_positive = jnp.sum(positive_regrets, axis=-1, keepdims=True)
@@ -233,7 +233,7 @@ def calculate_strategy_optimized(regrets: jnp.ndarray, visited_mask: jnp.ndarray
         positive_regrets / (sum_positive + 1e-12),
         uniform_strategy
     )
-    jax.debug.print("✅ calculate_strategy_optimized completed")
+    # jax.debug.print("✅ calculate_strategy_optimized completed")
     return strategy
 
 # Testing utilities
