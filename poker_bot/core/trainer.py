@@ -540,10 +540,13 @@ def _cfr_step_with_mccfr(
     # Flatten batch data for MCCFR
     flat_info_sets = batch_info_sets.reshape(-1)
     flat_action_values = batch_action_values.reshape(-1, config.num_actions)
-    # Track visited info sets
-    visited_info_sets = jnp.unique(flat_info_sets)
+    # Track visited info sets - FIX JAX JIT COMPATIBILITY
     visited_mask = jnp.zeros(config.max_info_sets, dtype=jnp.bool_)
-    visited_mask = visited_mask.at[visited_info_sets].set(True)
+    visited_mask = visited_mask.at[flat_info_sets].set(True)
+    # DEBUG: Validate flattened data
+    jax.debug.print("  flat_info_sets shape: {}, dtype: {}", flat_info_sets.shape, flat_info_sets.dtype)
+    jax.debug.print("  flat_action_values shape: {}, dtype: {}", flat_action_values.shape, flat_action_values.dtype)
+    jax.debug.print("  visited_mask sum: {}", jnp.sum(visited_mask))
     # MCCFR operations
     game_key = jax.random.fold_in(key, iteration)
     sampling_mask = mc_sampling_strategy(regrets, flat_info_sets, game_key)
