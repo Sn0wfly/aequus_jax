@@ -206,22 +206,22 @@ def _compute_real_cfr_regrets(
     player_payoff = game_payoffs[player_idx]
     
     # NUEVOS valores más balanceados
-    scale_factor = 1.5  # REDUCIDO de 2.0
+    scale_factor = 2.0  # REDUCIDO de 2.0
 
     if num_actions == 9:  
         action_values = jnp.where(
-            normalized_strength > 0.7,  # NUTS (flush+)
-            jnp.array([-2.0, -0.5, 0.0, 0.5, 1.0, 1.5, 1.0, 1.2, 2.0]),
+            normalized_strength > 0.6,  # NUTS (flush+)
+            jnp.array([-0.8, 0.1, 0.2, 0.4, 0.6, 0.8, 0.5, 0.7, 1.0]) * scale_factor,
             jnp.where(
-                normalized_strength > 0.45,  # TRIPS
-                jnp.array([-1.0, 0.0, 0.2, 0.5, 0.8, 1.0, 0.7, 0.9, 1.2]),
+                normalized_strength > 0.3,  # TRIPS
+                jnp.array([-0.2, 0.0, 0.1, 0.1, 0.1, 0.2, 0.0, 0.1, 0.2]),
                 jnp.where(
-                    normalized_strength > 0.25,  # PAIRS
-                    jnp.array([0.0, 0.5, 0.3, 0.2, 0.0, -0.2, -0.3, -0.5, -0.8]),
+                    normalized_strength > 0.15,  # PAIRS
+                    jnp.array([0.1, 0.0, 0.1, 0.0, 0.0, 0.0, -0.1, -0.1, -0.1]),
                     jnp.where(
-                        normalized_strength > 0.12,  # WEAK PAIRS
-                        jnp.array([0.8, 0.2, 0.0, -0.5, -0.8, -1.0, -1.2, -1.5, -2.0]),
-                        jnp.array([1.5, -0.5, -1.0, -1.5, -2.0, -2.5, -3.0, -3.5, -4.0])  # TRASH
+                        normalized_strength > 0.08,  # WEAK PAIRS
+                        jnp.array([0.5, -0.2, -0.1, -0.2, -0.2, -0.2, -0.3, -0.3, -0.3]),
+                        jnp.array([0.9, -0.4, -0.3, -0.5, -0.4, -0.3, -0.6, -0.5, -0.2])  # TRASH
                     )
                 )
             )
@@ -431,7 +431,7 @@ def _cfr_step_pure(
     )
     
     # CRITICAL FIX: Use a decaying learning rate for stability
-    learning_rate = 0.004 #config.learning_rate # Constant learning rate
+    learning_rate = 0.005 #config.learning_rate # Constant learning rate
     regret_updates = regret_updates * learning_rate
     
     # Actualizar regrets con nueva información
