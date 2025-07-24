@@ -18,7 +18,7 @@ from functools import partial
 
 from . import full_game_engine as game_engine
 from .bucketing import compute_info_set_id, validate_bucketing_system
-from .mccfr_algorithm import MCCFRTrainer, mc_sampling_strategy, accumulate_regrets_fixed
+from .mccfr_algorithm import MCCFRTrainer, mc_sampling_strategy, accumulate_regrets_fixed, calculate_strategy
 
 logger = logging.getLogger(__name__)
 
@@ -309,11 +309,15 @@ class PokerTrainer:
         for i in range(num_iterations):
             iter_start = time.time()
             iter_key = jax.random.fold_in(key, i)
-            # USE MCCFR instead of broken CFR - FIXED CALL
-            self.mccfr_trainer, self.regrets, self.strategy = _cfr_step_with_mccfr(
-                self.mccfr_trainer, iter_key, self.config, self.iteration,
+            # USE MCCFR with JAX arrays instead of MCCFRTrainer object
+            self.regrets, self.strategy = _cfr_step_with_mccfr(
+                self.regrets, self.strategy, iter_key, self.config, self.iteration,
                 self.lut_keys_jax, self.lut_values_jax, self.lut_table_size
             )
+            # Update MCCFRTrainer with new values (outside JIT)
+            self.mccfr_trainer.regrets = self.regrets
+            self.mccfr_trainer.strategy = self.strategy
+            self.mccfr_trainer.iteration = self.iteration
             self.iteration += 1
             regret_magnitude = jnp.sum(jnp.abs(self.regrets))
             strategy_entropy = self._compute_strategy_entropy()
@@ -467,14 +471,15 @@ def create_trainer(config_path: Optional[str] = None) -> PokerTrainer:
 
 @partial(jax.jit, static_argnames=("config",))
 def _cfr_step_with_mccfr(
-    mccfr_trainer: MCCFRTrainer,
+    regrets: jax.Array,
+    strategy: jax.Array,
     key: jax.Array,
     config: TrainerConfig,
     iteration: int,
     lut_keys: jax.Array,
     lut_values: jax.Array,
     lut_table_size: int
-) -> tuple[MCCFRTrainer, jax.Array, jax.Array]:
+) -> tuple[jax.Array, jax.Array]:
     """
     NEW: Use MCCFR + CFR+ instead of broken vanilla CFR.
     """
@@ -528,9 +533,16 @@ def _cfr_step_with_mccfr(
     flat_info_sets = batch_info_sets.reshape(-1)  # [batch_size * 6]
     flat_action_values = batch_action_values.reshape(-1, config.num_actions)  # [batch_size * 6, 9]
 
-    # Update MCCFR with REAL data
+    # USE MCCFR functions directly instead of MCCFRTrainer object
+    # MC sampling
     game_key = jax.random.fold_in(key, iteration)
-    mccfr_trainer.update(flat_info_sets, flat_action_values, game_key)
+    sampling_mask = mc_sampling_strategy(regrets, flat_info_sets, game_key)
+    
+    # Update regrets using MCCFR algorithm
+    updated_regrets = accumulate_regrets_fixed(regrets, flat_info_sets, flat_action_values, sampling_mask)
+    
+    # Calculate new strategy
+    updated_strategy = calculate_strategy(updated_regrets)
 
-    # Return trainer AND updated arrays for JIT efficiency
-    return mccfr_trainer, mccfr_trainer.regrets, mccfr_trainer.strategy
+    # Return only JAX arrays
+    return updated_regrets, updated_strategy
