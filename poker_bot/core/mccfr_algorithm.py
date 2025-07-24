@@ -75,45 +75,41 @@ def accumulate_regrets_fixed(
     action_regrets: jnp.ndarray,
     sampling_mask: jnp.ndarray
 ) -> jnp.ndarray:
-    """FIXED: Proper regret accumulation using scatter_add to avoid collisions."""
-    
+    """FIXED: Proper regret accumulation with dtype consistency."""
+    # CRITICAL FIX: Ensure consistent dtypes to prevent broadcasting bugs
+    info_set_indices = info_set_indices.astype(jnp.int32)
+    regrets = regrets.astype(jnp.float32)
+    action_regrets = action_regrets.astype(jnp.float32)
+    sampling_mask = sampling_mask.astype(jnp.bool_)
+    # DEBUG: Print dtypes to confirm
+    jax.debug.print("🔧 accumulate_regrets_fixed dtypes:")
+    jax.debug.print("  regrets: {}, info_set_indices: {}", regrets.dtype, info_set_indices.dtype)
+    jax.debug.print("  action_regrets: {}, sampling_mask: {}", action_regrets.dtype, sampling_mask.dtype)
     # Only process sampled info sets
     valid_mask = sampling_mask & (info_set_indices >= 0) & (info_set_indices < regrets.shape[0])
-    
     # Get valid indices and regrets
     valid_indices = jnp.where(valid_mask, info_set_indices, 0)
     valid_regrets = jnp.where(valid_mask[:, None], action_regrets, jnp.zeros_like(action_regrets))
-    
-    # DEBUG: Add debugging to see what's happening
-    #jax.debug.print("🔍 accumulate_regrets_fixed debugging:")
-    #jax.debug.print("  regrets shape: {}", regrets.shape)
-    #jax.debug.print("  info_set_indices: {}", info_set_indices)
-    #jax.debug.print("  valid_mask: {}", valid_mask)
-    #jax.debug.print("  valid_indices: {}", valid_indices)
-    #jax.debug.print("  valid_regrets magnitude: {}", jnp.sum(jnp.abs(valid_regrets)))
-    
-    # CRITICAL FIX: Use scatter_add with proper dimension_numbers to avoid collisions
-    # This ensures multiple updates to the same info_set are properly accumulated
+    # CRITICAL DEBUG: Check shapes before scatter_add
+    jax.debug.print("  valid_indices shape: {}, max: {}", valid_indices.shape, jnp.max(valid_indices))
+    jax.debug.print("  valid_regrets shape: {}", valid_regrets.shape)
+    jax.debug.print("  regrets.shape[0]: {}", regrets.shape[0])
+    # Ensure scatter_add parameters are correct
     dimension_numbers = jax.lax.ScatterDimensionNumbers(
-        update_window_dims=(1,),  # action_regrets has 1 update dimension
-        inserted_window_dims=(0,),  # info_set_indices has 0 inserted dimensions
-        scatter_dims_to_operand_dims=(0,)  # scatter along info_set dimension
+        update_window_dims=(1,),
+        inserted_window_dims=(0,),
+        scatter_dims_to_operand_dims=(0,)
     )
-    
-    # Use scatter_add to properly accumulate regrets for each info_set
+    # Use scatter_add with proper type casting
     updated_regrets = jax.lax.scatter_add(
         regrets,
-        valid_indices[:, None],  # [batch_size, 1] indices
-        valid_regrets,           # [batch_size, num_actions] updates
+        valid_indices[:, None].astype(jnp.int32),  # Ensure int32
+        valid_regrets.astype(jnp.float32),         # Ensure float32
         dimension_numbers=dimension_numbers,
         indices_are_sorted=False,
-        unique_indices=False  # Allow multiple updates to same index
+        unique_indices=False
     )
-    
-    # DEBUG: Check if updates were applied
-    #jax.debug.print("  updated_regrets magnitude: {}", jnp.sum(jnp.abs(updated_regrets)))
-    #jax.debug.print("  regret change: {}", jnp.sum(jnp.abs(updated_regrets - regrets)))
-    
+    jax.debug.print("✅ accumulate_regrets_fixed completed successfully")
     return updated_regrets
 
 @jax.jit

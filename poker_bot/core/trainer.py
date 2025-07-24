@@ -481,68 +481,82 @@ def _cfr_step_with_mccfr(
     lut_table_size: int
 ) -> tuple[jax.Array, jax.Array]:
     """
-    NEW: Use MCCFR + CFR+ instead of broken vanilla CFR.
+    NEW: Use MCCFR + CFR+ with DEBUG validation
     """
+    # DEBUG: Validate input shapes and dtypes
+    jax.debug.print("🔍 INPUT VALIDATION:")
+    jax.debug.print("  regrets shape: {}, dtype: {}", regrets.shape, regrets.dtype)
+    jax.debug.print("  strategy shape: {}, dtype: {}", strategy.shape, strategy.dtype)
+    jax.debug.print("  config.batch_size: {}", config.batch_size)
+    jax.debug.print("  lut_keys shape: {}, dtype: {}", lut_keys.shape, lut_keys.dtype)
+    jax.debug.print("  lut_values shape: {}, dtype: {}", lut_values.shape, lut_values.dtype)
     # Generate keys for real game simulations
     keys = jax.random.split(key, config.batch_size)
-
-    # Use REAL game engine with LUT - FIXED PARAMETERS
+    jax.debug.print("  keys shape: {}", keys.shape)
+    # Use REAL game engine with LUT
+    jax.debug.print("🎮 CALLING GAME ENGINE...")
     payoffs, histories, game_results_batch = game_engine.unified_batch_simulation_with_lut(
         keys, lut_keys, lut_values, lut_table_size, config.num_actions
     )
-
-    # Process all games in batch
+    # DEBUG: Validate game engine outputs
+    jax.debug.print("📊 GAME ENGINE OUTPUTS:")
+    jax.debug.print("  payoffs shape: {}, dtype: {}", payoffs.shape, payoffs.dtype)
+    jax.debug.print("  game_results_batch hole_cards shape: {}", game_results_batch['hole_cards'].shape)
+    jax.debug.print("  game_results_batch final_community shape: {}", game_results_batch['final_community'].shape)
+    jax.debug.print("  game_results_batch final_pot shape: {}", game_results_batch['final_pot'].shape)
     def process_single_game(game_idx):
-        game_results_single = {
-            'hole_cards': game_results_batch['hole_cards'][game_idx],
-            'final_community': game_results_batch['final_community'][game_idx],
-            'final_pot': game_results_batch['final_pot'][game_idx],
-        }
-
-        # Compute info sets for all 6 players
-        hole_cards_batch = game_results_single['hole_cards']  # [6, 2]
-        community_cards = game_results_single['final_community']  # [5]
-        pot_size = game_results_single['final_pot']  # scalar
-
-        # Vectorized info set computation
+        hole_cards_batch = game_results_batch['hole_cards'][game_idx]
+        community_cards = game_results_batch['final_community'][game_idx]
+        pot_size = game_results_batch['final_pot'][game_idx]
+        # DEBUG: Validate inputs to compute_info_set_id
+        jax.debug.print("🎯 process_single_game {}", game_idx)
+        jax.debug.print("  hole_cards_batch shape: {}", hole_cards_batch.shape)
+        jax.debug.print("  community_cards shape: {}", community_cards.shape)
+        jax.debug.print("  pot_size: {}", pot_size)
         player_indices = jnp.arange(6)
         pot_size_broadcast = jnp.full(6, pot_size)
-
         info_set_indices = jax.vmap(
             lambda hole_cards, player_idx, pot: compute_info_set_id(
                 hole_cards, community_cards, player_idx, jnp.array([pot])
             )
         )(hole_cards_batch, player_indices, pot_size_broadcast)
-
-        # USE REAL PAYOFFS instead of hardcoded action values
-        game_payoffs = payoffs[game_idx]  # [6]
-
-        # Compute counterfactual values from REAL game payoffs
+        # DEBUG: Validate info_set_indices
+        jax.debug.print("  info_set_indices shape: {}, dtype: {}", info_set_indices.shape, info_set_indices.dtype)
+        jax.debug.print("  info_set_indices min: {}, max: {}", jnp.min(info_set_indices), jnp.max(info_set_indices))
+        game_payoffs = payoffs[game_idx].astype(jnp.float32)
         action_values = jnp.broadcast_to(
             game_payoffs[:, None], 
             (6, config.num_actions)
-        )  # [6, 9] - same payoff for all actions initially
-
+        ).astype(jnp.float32)
+        jax.debug.print("  action_values shape: {}, dtype: {}", action_values.shape, action_values.dtype)
         return info_set_indices, action_values
-
-    # Process all games in batch
+    # DEBUG: Before batch processing
+    jax.debug.print("🔄 BATCH PROCESSING...")
     batch_indices = jnp.arange(config.batch_size)
     batch_info_sets, batch_action_values = jax.vmap(process_single_game)(batch_indices)
-
-    # Flatten batch data for MCCFR
-    flat_info_sets = batch_info_sets.reshape(-1)  # [batch_size * 6]
-    flat_action_values = batch_action_values.reshape(-1, config.num_actions)  # [batch_size * 6, 9]
-
-    # USE MCCFR functions directly instead of MCCFRTrainer object
-    # MC sampling
+    # DEBUG: Validate batch processing outputs
+    jax.debug.print("  batch_info_sets shape: {}, dtype: {}", batch_info_sets.shape, batch_info_sets.dtype)
+    jax.debug.print("  batch_action_values shape: {}, dtype: {}", batch_action_values.shape, batch_action_values.dtype)
+    flat_info_sets = batch_info_sets.reshape(-1)
+    flat_action_values = batch_action_values.reshape(-1, config.num_actions)
+    # DEBUG: Validate flattened data
+    jax.debug.print("  flat_info_sets shape: {}, dtype: {}", flat_info_sets.shape, flat_info_sets.dtype)
+    jax.debug.print("  flat_action_values shape: {}, dtype: {}", flat_action_values.shape, flat_action_values.dtype)
+    jax.debug.print("🧠 MCCFR OPERATIONS...")
+    from .mccfr_algorithm import mc_sampling_strategy, accumulate_regrets_fixed, calculate_strategy
     game_key = jax.random.fold_in(key, iteration)
+    jax.debug.print("  Before mc_sampling_strategy")
     sampling_mask = mc_sampling_strategy(regrets, flat_info_sets, game_key)
-    
-    # Update regrets using MCCFR algorithm
+    jax.debug.print("  sampling_mask shape: {}, dtype: {}", sampling_mask.shape, sampling_mask.dtype)
+    jax.debug.print("  Before accumulate_regrets_fixed - CRITICAL POINT")
+    jax.debug.print("    regrets shape: {}, dtype: {}", regrets.shape, regrets.dtype)
+    jax.debug.print("    flat_info_sets shape: {}, dtype: {}", flat_info_sets.shape, flat_info_sets.dtype)
+    jax.debug.print("    flat_action_values shape: {}, dtype: {}", flat_action_values.shape, flat_action_values.dtype)
+    jax.debug.print("    sampling_mask shape: {}, dtype: {}", sampling_mask.shape, sampling_mask.dtype)
     updated_regrets = accumulate_regrets_fixed(regrets, flat_info_sets, flat_action_values, sampling_mask)
-    
-    # Calculate new strategy
+    jax.debug.print("  After accumulate_regrets_fixed - SUCCESS")
     updated_strategy = calculate_strategy(updated_regrets)
-
-    # Return only JAX arrays
+    jax.debug.print("🎯 FINAL OUTPUTS:")
+    jax.debug.print("  updated_regrets shape: {}", updated_regrets.shape)
+    jax.debug.print("  updated_strategy shape: {}", updated_strategy.shape)
     return updated_regrets, updated_strategy
