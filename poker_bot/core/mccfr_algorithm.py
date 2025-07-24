@@ -217,6 +217,25 @@ def performance_benchmark(pot_size: jnp.ndarray) -> float:
     """Performance benchmark for validation."""
     return jnp.sum(pot_size) / 1000.0  # Normalized pot size
 
+@jax.jit
+def calculate_strategy_optimized(regrets: jnp.ndarray, visited_mask: jnp.ndarray) -> jnp.ndarray:
+    """OPTIMIZED: Only calculate strategy for visited info sets."""
+    jax.debug.print("🔧 calculate_strategy_optimized starting...")
+    jax.debug.print("  regrets shape: {}, visited_mask sum: {}", regrets.shape, jnp.sum(visited_mask))
+    # CLAVE: Solo procesar info sets que han sido visitados
+    positive_regrets = jnp.maximum(regrets, 0.0)
+    sum_positive = jnp.sum(positive_regrets, axis=-1, keepdims=True)
+    # Strategy uniforme por defecto
+    uniform_strategy = jnp.ones_like(regrets) / regrets.shape[-1]
+    # OPTIMIZACIÓN: Solo calcular para info sets visitados
+    strategy = jnp.where(
+        visited_mask[:, None] & (sum_positive > 1e-12),
+        positive_regrets / (sum_positive + 1e-12),
+        uniform_strategy
+    )
+    jax.debug.print("✅ calculate_strategy_optimized completed")
+    return strategy
+
 # Testing utilities
 @jax.jit
 def test_mc_sampling():

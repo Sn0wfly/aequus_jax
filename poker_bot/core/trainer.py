@@ -18,7 +18,7 @@ from functools import partial
 
 from . import full_game_engine as game_engine
 from .bucketing import compute_info_set_id, validate_bucketing_system
-from .mccfr_algorithm import MCCFRTrainer, mc_sampling_strategy, accumulate_regrets_fixed, calculate_strategy
+from .mccfr_algorithm import MCCFRTrainer, mc_sampling_strategy, accumulate_regrets_fixed, calculate_strategy_optimized
 
 logger = logging.getLogger(__name__)
 
@@ -537,25 +537,18 @@ def _cfr_step_with_mccfr(
     # DEBUG: Validate batch processing outputs
     jax.debug.print("  batch_info_sets shape: {}, dtype: {}", batch_info_sets.shape, batch_info_sets.dtype)
     jax.debug.print("  batch_action_values shape: {}, dtype: {}", batch_action_values.shape, batch_action_values.dtype)
+    # Flatten batch data for MCCFR
     flat_info_sets = batch_info_sets.reshape(-1)
     flat_action_values = batch_action_values.reshape(-1, config.num_actions)
-    # DEBUG: Validate flattened data
-    jax.debug.print("  flat_info_sets shape: {}, dtype: {}", flat_info_sets.shape, flat_info_sets.dtype)
-    jax.debug.print("  flat_action_values shape: {}, dtype: {}", flat_action_values.shape, flat_action_values.dtype)
-    jax.debug.print("🧠 MCCFR OPERATIONS...")
-    from .mccfr_algorithm import mc_sampling_strategy, accumulate_regrets_fixed, calculate_strategy
+    # Track visited info sets
+    visited_info_sets = jnp.unique(flat_info_sets)
+    visited_mask = jnp.zeros(config.max_info_sets, dtype=jnp.bool_)
+    visited_mask = visited_mask.at[visited_info_sets].set(True)
+    # MCCFR operations
     game_key = jax.random.fold_in(key, iteration)
-    jax.debug.print("  Before mc_sampling_strategy")
     sampling_mask = mc_sampling_strategy(regrets, flat_info_sets, game_key)
-    jax.debug.print("  sampling_mask shape: {}, dtype: {}", sampling_mask.shape, sampling_mask.dtype)
-    jax.debug.print("  Before accumulate_regrets_fixed - CRITICAL POINT")
-    jax.debug.print("    regrets shape: {}, dtype: {}", regrets.shape, regrets.dtype)
-    jax.debug.print("    flat_info_sets shape: {}, dtype: {}", flat_info_sets.shape, flat_info_sets.dtype)
-    jax.debug.print("    flat_action_values shape: {}, dtype: {}", flat_action_values.shape, flat_action_values.dtype)
-    jax.debug.print("    sampling_mask shape: {}, dtype: {}", sampling_mask.shape, sampling_mask.dtype)
     updated_regrets = accumulate_regrets_fixed(regrets, flat_info_sets, flat_action_values, sampling_mask)
-    jax.debug.print("  After accumulate_regrets_fixed - SUCCESS")
-    updated_strategy = calculate_strategy(updated_regrets)
+    updated_strategy = calculate_strategy_optimized(updated_regrets, visited_mask)
     jax.debug.print("🎯 FINAL OUTPUTS:")
     jax.debug.print("  updated_regrets shape: {}", updated_regrets.shape)
     jax.debug.print("  updated_strategy shape: {}", updated_strategy.shape)
