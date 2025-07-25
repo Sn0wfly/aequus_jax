@@ -165,17 +165,26 @@ def cfr_iteration(
     info_set_indices: jnp.ndarray,
     action_values: jnp.ndarray,
     sampling_mask: jnp.ndarray,
-    iteration: int
+    iteration: int,
+    learning_rate: float,
+    use_discounting: bool
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Single CFR iteration with MC sampling."""
     
-    # Update regrets
-    new_regrets = accumulate_regrets_fixed(regrets, info_set_indices, action_values, sampling_mask)
+    # 1. Update regrets (con el learning_rate correcto)
+    new_regrets = accumulate_regrets_fixed(regrets, info_set_indices, action_values, sampling_mask, learning_rate)
     
-    # Apply CFR+ discounting
-    new_regrets = apply_cfr_plus_discounting(new_regrets, iteration)
+    # 2. APLICAR DESCUENTO (LA PARTE CLAVE QUE FALTABA)
+    def apply_discount(r):
+        return apply_cfr_plus_discounting(r, iteration)
     
-    # Update strategy
+    def no_discount(r):
+        return r
+
+    # Usar lax.cond para que sea compatible con JIT
+    new_regrets = lax.cond(use_discounting, apply_discount, no_discount, new_regrets)
+    
+    # 3. Update strategy (sin cambios)
     new_strategy = calculate_strategy(new_regrets)
     
     return new_regrets, new_strategy

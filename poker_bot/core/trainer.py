@@ -546,20 +546,11 @@ def _cfr_step_with_mccfr(
     # jax.debug.print("  flat_action_values shape: {}, dtype: {}", flat_action_values.shape, flat_action_values.dtype)
     # jax.debug.print("  visited_mask sum: {}", jnp.sum(visited_mask))
     # MCCFR operations
-    from .mccfr_algorithm import mc_sampling_strategy, accumulate_regrets_fixed, calculate_strategy_optimized
+    from .mccfr_algorithm import mc_sampling_strategy, cfr_iteration
     game_key = jax.random.fold_in(key, iteration)
-    # jax.debug.print("  Before mc_sampling_strategy")
     sampling_mask = mc_sampling_strategy(regrets, flat_info_sets, game_key)
-    # jax.debug.print("  sampling_mask shape: {}, dtype: {}", sampling_mask.shape, sampling_mask.dtype)
-    # jax.debug.print("  Before accumulate_regrets_fixed - CRITICAL POINT")
-    # jax.debug.print("    regrets shape: {}, dtype: {}", regrets.shape, regrets.dtype)
-    # jax.debug.print("    flat_info_sets shape: {}, dtype: {}", flat_info_sets.shape, flat_info_sets.dtype)
-    # jax.debug.print("    flat_action_values shape: {}, dtype: {}", flat_action_values.shape, flat_action_values.dtype)
-    # jax.debug.print("    sampling_mask shape: {}, dtype: {}", sampling_mask.shape, sampling_mask.dtype)
-    updated_regrets = accumulate_regrets_fixed(regrets, flat_info_sets, flat_action_values, sampling_mask, config.learning_rate)
-    # jax.debug.print("  After accumulate_regrets_fixed - SUCCESS")
-    updated_strategy = calculate_strategy_optimized(updated_regrets, visited_mask)
-    # jax.debug.print("🎯 FINAL OUTPUTS:")
-    # jax.debug.print("  updated_regrets shape: {}", updated_regrets.shape)
-    # jax.debug.print("  updated_strategy shape: {}", updated_strategy.shape)
+    updated_regrets, updated_strategy = cfr_iteration(
+        regrets, strategy, flat_info_sets, flat_action_values, sampling_mask, 
+        iteration, config.learning_rate, config.use_regret_discounting
+    )
     return updated_regrets, updated_strategy
