@@ -603,9 +603,9 @@ def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9):
 def batch_play(keys, lut_keys, lut_values, table_size, num_actions=9):
     """Play multiple games in batch with configurable action space."""
     return jax.vmap(
-        lambda k: play_one_game(k, lut_keys, lut_values, table_size, num_actions),
+        play_one_game,
         in_axes=(0, None, None, None, None)
-    )(keys)
+    )(keys, lut_keys, lut_values, table_size, num_actions)
 
 @jax.jit
 def initial_state_for_idx(idx):
