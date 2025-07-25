@@ -73,27 +73,20 @@ def accumulate_regrets_fixed(
     regrets: jnp.ndarray,
     info_set_indices: jnp.ndarray,
     action_regrets: jnp.ndarray,
-    sampling_mask: jnp.ndarray
+    sampling_mask: jnp.ndarray,
+    learning_rate: float = 0.0001
 ) -> jnp.ndarray:
-    """FIXED: Proper regret accumulation with dtype consistency."""
+    """FIXED: Proper regret accumulation with dtype consistency and learning rate."""
     # CRITICAL FIX: Ensure consistent dtypes to prevent broadcasting bugs
     info_set_indices = info_set_indices.astype(jnp.int32)
     regrets = regrets.astype(jnp.float32)
     action_regrets = action_regrets.astype(jnp.float32)
     sampling_mask = sampling_mask.astype(jnp.bool_)
-    # DEBUG: Print dtypes to confirm
-    # jax.debug.print("🔧 accumulate_regrets_fixed dtypes:")
-    # jax.debug.print("  regrets: {}, info_set_indices: {}", regrets.dtype, info_set_indices.dtype)
-    # jax.debug.print("  action_regrets: {}, sampling_mask: {}", action_regrets.dtype, sampling_mask.dtype)
     # Only process sampled info sets
     valid_mask = sampling_mask & (info_set_indices >= 0) & (info_set_indices < regrets.shape[0])
-    # Get valid indices and regrets
+    # Get valid indices and regrets, apply learning rate
     valid_indices = jnp.where(valid_mask, info_set_indices, 0)
-    valid_regrets = jnp.where(valid_mask[:, None], action_regrets, jnp.zeros_like(action_regrets))
-    # CRITICAL DEBUG: Check shapes before scatter_add
-    # jax.debug.print("  valid_indices shape: {}, max: {}", valid_indices.shape, jnp.max(valid_indices))
-    # jax.debug.print("  valid_regrets shape: {}", valid_regrets.shape)
-    # jax.debug.print("  regrets.shape[0]: {}", regrets.shape[0])
+    valid_regrets = jnp.where(valid_mask[:, None], action_regrets * learning_rate, jnp.zeros_like(action_regrets))
     # Ensure scatter_add parameters are correct
     dimension_numbers = jax.lax.ScatterDimensionNumbers(
         update_window_dims=(1,),
@@ -109,7 +102,6 @@ def accumulate_regrets_fixed(
         indices_are_sorted=False,
         unique_indices=False
     )
-    # jax.debug.print("✅ accumulate_regrets_fixed completed successfully")
     return updated_regrets
 
 @jax.jit

@@ -556,7 +556,7 @@ def _cfr_step_with_mccfr(
     # jax.debug.print("    flat_info_sets shape: {}, dtype: {}", flat_info_sets.shape, flat_info_sets.dtype)
     # jax.debug.print("    flat_action_values shape: {}, dtype: {}", flat_action_values.shape, flat_action_values.dtype)
     # jax.debug.print("    sampling_mask shape: {}, dtype: {}", sampling_mask.shape, sampling_mask.dtype)
-    updated_regrets = accumulate_regrets_fixed(regrets, flat_info_sets, flat_action_values, sampling_mask)
+    updated_regrets = accumulate_regrets_fixed(regrets, flat_info_sets, flat_action_values, sampling_mask, config.learning_rate)
     # jax.debug.print("  After accumulate_regrets_fixed - SUCCESS")
     updated_strategy = calculate_strategy_optimized(updated_regrets, visited_mask)
     # jax.debug.print("🎯 FINAL OUTPUTS:")
