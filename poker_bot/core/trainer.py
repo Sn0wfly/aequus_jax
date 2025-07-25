@@ -7,6 +7,7 @@ JAX-native implementation combining regret discounting and CFR+ for enhanced per
 
 import jax
 import jax.numpy as jnp
+import jax.lax as lax
 import numpy as np
 import logging
 import pickle
@@ -553,4 +554,27 @@ def _cfr_step_with_mccfr(
         regrets, strategy, flat_info_sets, flat_action_values, sampling_mask, 
         iteration, config.learning_rate, config.use_regret_discounting
     )
+
+    # --- INICIO DEL BLOQUE A INSERTAR ---
+
+    # Aplicar la lógica de CFR+ (regrets no negativos) si está activada en la configuración.
+    # Esta es una corrección crítica para asegurar que el algoritmo converge correctamente.
+    def apply_cfr_plus(r):
+        """Si CFR+ está activo, los regrets negativos se resetean a 0."""
+        return jnp.maximum(r, 0.0)
+
+    def do_nothing(r):
+        """Si CFR+ no está activo, los regrets no se modifican."""
+        return r
+
+    # Usamos jax.lax.cond para que esta lógica condicional sea compatible con la compilación JIT.
+    updated_regrets = lax.cond(
+        config.use_cfr_plus,
+        apply_cfr_plus,    # Función a ejecutar si config.use_cfr_plus es True
+        do_nothing,        # Función a ejecutar si config.use_cfr_plus es False
+        updated_regrets    # El dato sobre el que operan las funciones
+    )
+
+    # --- FIN DEL BLOQUE A INSERTAR ---
+
     return updated_regrets, updated_strategy
