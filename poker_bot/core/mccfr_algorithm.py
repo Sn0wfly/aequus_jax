@@ -102,6 +102,7 @@ def accumulate_regrets_fixed(
         indices_are_sorted=False,
         unique_indices=False
     )
+    updated_regrets = jnp.clip(updated_regrets, -1000.0, 1000.0)
     return updated_regrets
 
 @jax.jit
