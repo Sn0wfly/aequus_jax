@@ -309,12 +309,13 @@ class PokerTrainer:
         for i in range(num_iterations):
             iter_start = time.time()
             iter_key = jax.random.fold_in(key, i)
-            # Transfer LUT to GPU once per iteration OUTSIDE JIT
-            lut_keys_gpu = jnp.array(self.lut_keys, dtype=jnp.int32)
-            lut_values_gpu = jnp.array(self.lut_values, dtype=jnp.int32)
+            # LUT DUMMY para testing
+            lut_keys_gpu = jnp.arange(1000, dtype=jnp.int32)
+            lut_values_gpu = jnp.arange(1000, dtype=jnp.int32)
+            lut_table_size_dummy = 1000
             self.regrets, self.strategy = _cfr_step_with_mccfr(
                 self.regrets, self.strategy, iter_key, self.config, self.iteration,
-                lut_keys_gpu, lut_values_gpu, self.lut_table_size
+                lut_keys_gpu, lut_values_gpu, lut_table_size_dummy
             )
             # Update MCCFRTrainer with new values (outside JIT)
             self.mccfr_trainer.regrets = self.regrets
