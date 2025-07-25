@@ -515,7 +515,7 @@ def _cfr_step_with_mccfr(
         pot_size_broadcast = jnp.full(6, pot_size)
         info_set_indices = jax.vmap(
             lambda hole_cards, player_idx, pot: compute_info_set_id(
-                hole_cards, community_cards, player_idx, jnp.array([pot])
+                hole_cards, community_cards, player_idx, jnp.array([pot]), max_info_sets=config.max_info_sets
             )
         )(hole_cards_batch, player_indices, pot_size_broadcast)
         # DEBUG: Validate info_set_indices

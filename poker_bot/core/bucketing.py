@@ -27,10 +27,12 @@ ACTION_BUCKETS = 9     # Action history buckets
 @jax.jit
 def compute_info_set_id(hole_cards: jnp.ndarray, community_cards: jnp.ndarray, 
                        player_idx: int, pot_size: jnp.ndarray = None, 
-                       stack_size: jnp.ndarray = None, action_history: jnp.ndarray = None) -> jnp.ndarray:
+                       stack_size: jnp.ndarray = None, action_history: jnp.ndarray = None,
+                       max_info_sets: int = 100000) -> jnp.ndarray:
     """
     Compute unique info set ID for a player given their cards and game state.
     Enhanced for NLHE with improved position and stack awareness.
+    Now configurable for max_info_sets.
     
     Args:
         hole_cards: Player's hole cards [2] array
@@ -77,8 +79,8 @@ def compute_info_set_id(hole_cards: jnp.ndarray, community_cards: jnp.ndarray,
         action_bucket                # 9 * 1 = 9
     )
     
-    # Ensure within valid range (max 1,000,000 info sets)
-    return jnp.clip(jnp.mod(info_set_id, 50000), 0, 49999).astype(jnp.int32)
+    # Ensure within valid range (configurable)
+    return jnp.clip(jnp.mod(info_set_id, max_info_sets), 0, max_info_sets - 1).astype(jnp.int32)
 
 @jax.jit
 def _compute_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
