@@ -309,10 +309,12 @@ class PokerTrainer:
         for i in range(num_iterations):
             iter_start = time.time()
             iter_key = jax.random.fold_in(key, i)
-            # USE MCCFR with JAX arrays instead of MCCFRTrainer object
+            # Transfer LUT to GPU once per iteration OUTSIDE JIT
+            lut_keys_gpu = jnp.array(self.lut_keys, dtype=jnp.int32)
+            lut_values_gpu = jnp.array(self.lut_values, dtype=jnp.int32)
             self.regrets, self.strategy = _cfr_step_with_mccfr(
                 self.regrets, self.strategy, iter_key, self.config, self.iteration,
-                self.lut_keys, self.lut_values, self.lut_table_size
+                lut_keys_gpu, lut_values_gpu, self.lut_table_size
             )
             # Update MCCFRTrainer with new values (outside JIT)
             self.mccfr_trainer.regrets = self.regrets
@@ -493,13 +495,9 @@ def _cfr_step_with_mccfr(
     # Generate keys for real game simulations
     keys = jax.random.split(key, config.batch_size)
     # jax.debug.print("  keys shape: {}", keys.shape)
-    # Transfer LUT to GPU only when needed
-    lut_keys_gpu = jnp.array(lut_keys, dtype=jnp.int32)
-    lut_values_gpu = jnp.array(lut_values, dtype=jnp.int32)
     # Use REAL game engine with LUT
-    # jax.debug.print("🎮 CALLING GAME ENGINE...")
     payoffs, histories, game_results_batch = game_engine.unified_batch_simulation_with_lut(
-        keys, lut_keys_gpu, lut_values_gpu, lut_table_size, config.num_actions
+        keys, lut_keys, lut_values, lut_table_size, config.num_actions
     )
     # DEBUG: Validate game engine outputs
     # jax.debug.print("📊 GAME ENGINE OUTPUTS:")
