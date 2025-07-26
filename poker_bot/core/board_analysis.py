@@ -123,7 +123,7 @@ def get_street_multiplier(num_community_cards: int) -> float:
 def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
     """
     Analiza qué tan bien conecta nuestra mano con el board.
-    MEJORADO: Detecta overpairs vs underpairs correctamente.
+    100% compatible con JAX JIT - sin dynamic slicing.
     """
     num_community = jnp.sum(community_cards >= 0)
     
@@ -141,20 +141,20 @@ def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray)
         all_rank_counts = all_rank_counts.at[rank].add(1)
         all_suit_counts = all_suit_counts.at[suit].add(1)
     
-    # Community cards
+    # Community cards + track highest board rank
     max_community = jnp.minimum(num_community, 5)
-    board_ranks = jnp.zeros(5, dtype=jnp.int32)
+    highest_board_rank = 0
     
     for i in range(5):
         valid_card = jnp.where(i < max_community, community_cards[i], -1)
         rank = jnp.where(valid_card >= 0, valid_card // 4, 0)
         suit = jnp.where(valid_card >= 0, valid_card % 4, 0)
         
-        # Store board ranks for overpair detection
-        board_ranks = jnp.where(
-            (i < max_community) & (valid_card >= 0),
-            board_ranks.at[i].set(rank),
-            board_ranks
+        # Track highest board rank (compatible with JIT)
+        highest_board_rank = jnp.where(
+            (valid_card >= 0) & (rank > highest_board_rank),
+            rank,
+            highest_board_rank
         )
         
         all_rank_counts = jnp.where(
@@ -173,19 +173,11 @@ def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray)
     max_suit_count = jnp.max(all_suit_counts)
     pairs_count = jnp.sum(all_rank_counts >= 2)
     
-    # NUEVO: Detectar overpair vs underpair
+    # Detectar overpair
     is_pocket_pair = hole_ranks[0] == hole_ranks[1]
-    
-    # Si tenemos pocket pair, verificar si es overpair
-    highest_board_rank = jnp.where(
-        num_community >= 3,
-        jnp.max(board_ranks[:max_community]),
-        0
-    )
-    
     is_overpair = is_pocket_pair & (hole_ranks[0] > highest_board_rank) & (num_community >= 3)
     
-    # MEJORADO: Scoring con overpair detection
+    # Scoring con overpair detection
     made_hand_strength = jnp.where(
         max_rank_count >= 4, 1.0,  # Quads
         jnp.where(
