@@ -537,11 +537,12 @@ def _cfr_step_with_mccfr(
     # jax.debug.print("  batch_info_sets shape: {}, dtype: {}", batch_info_sets.shape, batch_info_sets.dtype)
     # jax.debug.print("  batch_action_values shape: {}, dtype: {}", batch_action_values.shape, batch_action_values.dtype)
     # Flatten batch data for MCCFR
-    flat_info_sets = batch_info_sets.reshape(-1)
+    flat_info_sets = batch_info_sets.reshape(-1).astype(jnp.int32)
     flat_action_values = batch_action_values.reshape(-1, config.num_actions)
-    # Track visited info sets - FIX JAX JIT COMPATIBILITY
+    # Track visited info sets - FIX JAX JIT COMPATIBILITY  
     visited_mask = jnp.zeros(config.max_info_sets, dtype=jnp.bool_)
-    visited_mask = visited_mask.at[flat_info_sets].set(True)
+    flat_info_sets_safe = flat_info_sets.astype(jnp.int32)
+    visited_mask = visited_mask.at[flat_info_sets_safe].set(True)
     # DEBUG: Validate flattened data
     # jax.debug.print("  flat_info_sets shape: {}, dtype: {}", flat_info_sets.shape, flat_info_sets.dtype)
     # jax.debug.print("  flat_action_values shape: {}, dtype: {}", flat_action_values.shape, flat_action_values.dtype)

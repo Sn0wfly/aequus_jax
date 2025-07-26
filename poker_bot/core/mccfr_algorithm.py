@@ -85,8 +85,8 @@ def accumulate_regrets_fixed(
     # Only process sampled info sets
     valid_mask = sampling_mask & (info_set_indices >= 0) & (info_set_indices < regrets.shape[0])
     # Get valid indices and regrets, apply learning rate
-    valid_indices = jnp.where(valid_mask, info_set_indices, 0)
-    valid_regrets = jnp.where(valid_mask[:, None], action_regrets * learning_rate, jnp.zeros_like(action_regrets))
+    valid_indices = jnp.where(valid_mask, info_set_indices, 0).astype(jnp.int32)
+    valid_regrets = jnp.where(valid_mask[:, None], action_regrets * learning_rate, jnp.zeros_like(action_regrets)).astype(jnp.float32)
     # Ensure scatter_add parameters are correct
     dimension_numbers = jax.lax.ScatterDimensionNumbers(
         update_window_dims=(1,),
@@ -96,8 +96,8 @@ def accumulate_regrets_fixed(
     # Use scatter_add with proper type casting
     updated_regrets = jax.lax.scatter_add(
         regrets,
-        valid_indices[:, None].astype(jnp.int32),  # Ensure int32
-        valid_regrets.astype(jnp.float32),         # Ensure float32
+        valid_indices[:, None],  # Already cast to int32 above
+        valid_regrets,           # Already cast to float32 above
         dimension_numbers=dimension_numbers,
         indices_are_sorted=False,
         unique_indices=False
