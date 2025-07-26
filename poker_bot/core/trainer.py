@@ -39,7 +39,8 @@ def apply_action_to_state(simulated_state, player_idx, action_idx):
     # Evaluar fuerza de mano del jugador
     hole_cards = simulated_state['hole_cards'][player_idx]
     community_cards = simulated_state['community_cards']
-    hand_strength = _evaluate_7card_simple(hole_cards, community_cards)
+    # Usar player_idx como posición (0-5 para 6-max)
+    hand_strength = _evaluate_7card_simple(hole_cards, community_cards, player_idx)
     
     # Lógica específica por fuerza de mano
     if action_idx == 0:  # FOLD
@@ -145,33 +146,11 @@ def _evaluate_hand_simple_pure(hole_cards: jnp.ndarray) -> jnp.ndarray:
     return rank_value + pair_bonus + suited_bonus
 
 @jax.jit
-def _evaluate_7card_simple(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
-    """Evaluación rápida de 7 cartas compatible con JAX JIT.."""
-    # Combinar todas las cartas (siempre 7 elementos)
-    all_cards = jnp.concatenate([hole_cards, community_cards])
+def _evaluate_7card_simple(hole_cards: jnp.ndarray, community_cards: jnp.ndarray, position: int = 2) -> jnp.ndarray:
+    """Evaluación multi-street completa."""
+    from .starting_hands import evaluate_hand_strength_multi_street
     
-    # Máscara para cartas válidas (>= 0)
-    valid_mask = all_cards >= 0
-    num_valid = jnp.sum(valid_mask)
-    
-    def evaluate_preflop_hand():
-        # Extraer posición del contexto (necesitarás pasarla como parámetro)
-        # Por ahora, usar posición por defecto 
-        position = 2  # CO como default
-        return classify_starting_hand_with_position(all_cards[:2], position)
-
-    # Si hay menos de 2 cartas válidas, retornar fuerza mínima
-    strength = jnp.where(
-        num_valid < 2,
-        0.1,  # Fuerza mínima
-        jnp.where(
-            num_valid == 2,  # Pre-flop: evaluar starting hands profesionales
-            evaluate_preflop_hand(),
-            _compute_hand_strength_fixed_size(all_cards, valid_mask)
-        )
-    )
-    
-    return jnp.clip(strength, 0.0, 1.0)
+    return evaluate_hand_strength_multi_street(hole_cards, community_cards, position)
 
 @jax.jit 
 def _compute_hand_strength_fixed_size(all_cards: jnp.ndarray, valid_mask: jnp.ndarray) -> jnp.ndarray:

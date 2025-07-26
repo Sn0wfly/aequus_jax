@@ -63,7 +63,7 @@ flush_community = jnp.array([41, 31, 26, 49, 5])  # Community from failing game
 
 # Test hand strength evaluation
 try:
-    strength = _evaluate_7card_simple(flush_cards, flush_community)
+    strength = _evaluate_7card_simple(flush_cards, flush_community, 0)  # position 0
     print(f"Game 29 strength: {strength:.3f} (should be 0.750)")
     
     # Test action values para flush

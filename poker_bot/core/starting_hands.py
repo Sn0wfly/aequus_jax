@@ -107,4 +107,43 @@ def classify_starting_hand_with_position(hole_cards: jnp.ndarray, position: int)
     adjusted_strength = base_strength * position_multiplier
     
     # Clamp para mantener rango válido
-    return jnp.clip(adjusted_strength, 0.05, 0.98) 
+    return jnp.clip(adjusted_strength, 0.05, 0.98)
+
+@jax.jit
+def evaluate_hand_strength_multi_street(
+    hole_cards: jnp.ndarray, 
+    community_cards: jnp.ndarray, 
+    position: int
+) -> jnp.ndarray:
+    """
+    Evaluación completa multi-street con board texture.
+    """
+    from .board_analysis import analyze_board_texture, get_street_multiplier, analyze_hand_vs_board
+    
+    num_community = jnp.sum(community_cards >= 0)
+    
+    # PREFLOP: Usar starting hands con position
+    preflop_strength = classify_starting_hand_with_position(hole_cards, position)
+    
+    # POST-FLOP: Combinar hand vs board + board texture
+    postflop_base = analyze_hand_vs_board(hole_cards, community_cards)
+    board_wetness = analyze_board_texture(community_cards)
+    street_multiplier = get_street_multiplier(num_community)
+    
+    # En boards wet, ser más cauteloso con manos marginales
+    board_adjustment = jnp.where(
+        board_wetness > 0.6,  # Board muy wet
+        postflop_base * 0.9,  # Reducir confianza
+        postflop_base * 1.1   # Board dry, aumentar confianza
+    )
+    
+    postflop_strength = board_adjustment * street_multiplier
+    
+    # Seleccionar evaluación según street
+    final_strength = jnp.where(
+        num_community == 0,  # Preflop
+        preflop_strength,
+        postflop_strength
+    )
+    
+    return jnp.clip(final_strength, 0.05, 0.98) 
