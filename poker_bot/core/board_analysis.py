@@ -42,23 +42,55 @@ def analyze_board_texture(community_cards: jnp.ndarray) -> jnp.ndarray:
             rank_counts
         )
     
-    # Detectar secuencias CORRECTAMENTE
-    straight_potential = 0.0
-    for start_rank in range(9):  # 0-8 para evitar overflow (A-5 hasta 9-K)
-        # Verificar ventanas de 3 cartas consecutivas
-        window_count = 0
-        for offset in range(3):  # Verificar 3 cartas consecutivas
-            if start_rank + offset < 13:  # Evitar overflow
-                window_count += jnp.where(rank_counts[start_rank + offset] > 0, 1, 0)
-        
-        # Solo dar straight potential si hay 2+ cartas en secuencia Y están realmente conectadas
-        is_connected = window_count >= 2
-        straight_potential = jnp.maximum(straight_potential, jnp.where(is_connected, 0.3, 0.0))
+    # STRAIGHT DRAWS - versión 100% JAX compatible
+    rank_counts = jnp.zeros(13, dtype=jnp.int32)
+    for i in range(5):
+        valid_card = jnp.where(i < max_cards, community_cards[i], -1)
+        rank = jnp.where(valid_card >= 0, valid_card // 4, 0)
+        rank_counts = jnp.where(
+            valid_card >= 0,
+            rank_counts.at[rank].add(1),
+            rank_counts
+        )
 
-    # Wheel straight special case (A-2-3-4-5)
-    wheel_count = jnp.sum(rank_counts[[12, 0, 1, 2, 3]] > 0)  # A, 2, 3, 4, 5
-    has_wheel_draw = wheel_count >= 2
-    straight_potential = jnp.maximum(straight_potential, jnp.where(has_wheel_draw, 0.3, 0.0))
+    # Detectar secuencias de forma simple y compatible
+    straight_potential = 0.0
+
+    # Check for regular straights (no wheel)
+    for start_rank in range(9):  # 0-8 (2-3-4 hasta T-J-Q)
+        consecutive_cards = 0
+        for offset in range(3):  # Ventana de 3 cartas
+            if start_rank + offset < 13:
+                has_card = rank_counts[start_rank + offset] > 0
+                consecutive_cards += jnp.where(has_card, 1, 0)
+        
+        # Si hay 2+ cartas consecutivas, hay straight potential
+        has_potential = consecutive_cards >= 2
+        straight_potential = jnp.maximum(
+            straight_potential, 
+            jnp.where(has_potential, 0.3, 0.0)
+        )
+
+    # Wheel straight (A-2-3-4-5) - versión JAX compatible
+    ace_count = rank_counts[12]  # A
+    two_count = rank_counts[0]   # 2
+    three_count = rank_counts[1] # 3
+    four_count = rank_counts[2]  # 4
+    five_count = rank_counts[3]  # 5
+
+    wheel_cards = (
+        jnp.where(ace_count > 0, 1, 0) +
+        jnp.where(two_count > 0, 1, 0) +
+        jnp.where(three_count > 0, 1, 0) +
+        jnp.where(four_count > 0, 1, 0) +
+        jnp.where(five_count > 0, 1, 0)
+    )
+
+    has_wheel_potential = wheel_cards >= 2
+    straight_potential = jnp.maximum(
+        straight_potential,
+        jnp.where(has_wheel_potential, 0.3, 0.0)
+    )
 
     # PAIRED BOARDS - versión menos agresiva
     max_rank_count = jnp.max(rank_counts)
