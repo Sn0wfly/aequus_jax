@@ -546,7 +546,8 @@ def _cfr_step_with_mccfr(
             for a in range(config.num_actions):
                 action_values = action_values.at[p,a].set(calculate_action_value(p, a))
                 
-        action_values = action_values.astype(jnp.float32)
+        # Escalar action_values para evitar clipping
+        action_values = action_values.astype(jnp.float32) * 0.01
         # jax.debug.print("  action_values shape: {}, dtype: {}", action_values.shape, action_values.dtype)
         return info_set_indices, action_values
     # DEBUG: Before batch processing
