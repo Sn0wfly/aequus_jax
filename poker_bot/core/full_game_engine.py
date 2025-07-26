@@ -655,12 +655,16 @@ def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9):
     # Resolve showdown
     payoffs = resolve_showdown(state, lut_keys, lut_values, table_size)
     
+    # Asignar posiciones (0-5 para 6-max)
+    positions = jnp.arange(6)  # UTG, MP, CO, BTN, SB, BB
+    
     return payoffs, state.action_hist, {
         'hole_cards': state.hole_cards,
         'final_community': state.comm_cards,
         'final_pot': state.pot,
         'player_stacks': state.stacks,
-        'player_bets': state.bets
+        'player_bets': state.bets,
+        'positions': positions  # NUEVO: incluir posiciones
     }
 
 @jax.jit
@@ -728,11 +732,42 @@ def unified_batch_simulation_with_lut_full(keys, lut_keys, lut_values, table_siz
     """
     return batch_play(keys, lut_keys, lut_values, table_size, num_actions)
 
+@jax.jit
+def generate_random_game_state_with_position(key):
+    """Genera state incluyendo posición de cada jugador."""
+    
+    # Initialize state similar to play_one_game
+    stacks = jnp.full((6,), 1000.0)
+    bets = jnp.zeros((6,)).at[0].set(5.0).at[1].set(10.0)
+    player_status = jnp.zeros((6,), dtype=jnp.int8)
+    
+    # Randomizar hole_cards
+    key, subkey = jax.random.split(key)
+    shuffled_deck = jax.random.permutation(subkey, jnp.arange(52))
+    hole_cards = shuffled_deck[:12].reshape(6, 2)
+    comm_cards = jnp.full((5,), -1)
+    pot_size = jnp.array([15.0])
+    
+    # Asignar posiciones (0-5 para 6-max)
+    positions = jnp.arange(6)  # UTG, MP, CO, BTN, SB, BB
+    
+    # Simular payoffs básicos (placeholder)
+    payoffs = jnp.zeros((6,))
+    
+    return {
+        'hole_cards': hole_cards,
+        'community_cards': comm_cards,
+        'pot_size': pot_size,
+        'positions': positions,  # NUEVO
+        'payoffs': payoffs
+    }
+
 # Backward compatibility aliases
 unified_batch_simulation_with_lut = unified_batch_simulation_with_lut_production
 
 # Auto-load LUT at module import (if available)
 try:
+    from .trainer import load_hand_evaluation_lut
     load_hand_evaluation_lut()
 except:
     pass  # Continue without LUT for testing

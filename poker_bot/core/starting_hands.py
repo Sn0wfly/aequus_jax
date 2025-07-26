@@ -68,11 +68,43 @@ def classify_starting_hand(hole_cards: jnp.ndarray) -> jnp.ndarray:
         )
     )
 
-@jax.jit  
+@jax.jit
 def get_position_multiplier(position: int) -> float:
     """
     Multiplica hand strength basado en posición.
-    0=UTG, 1=MP, 2=CO, 3=BTN, 4=SB, 5=BB
+    0=UTG (tight), 1=MP, 2=CO, 3=BTN (loose), 4=SB, 5=BB
     """
-    position_values = jnp.array([0.8, 0.85, 0.95, 1.1, 0.9, 0.85])
-    return position_values[position] 
+    # Valores profesionales: UTG más tight, BTN más loose
+    position_values = jnp.array([
+        0.75,  # UTG - Very tight (fold 85% of hands)
+        0.85,  # MP - Tight 
+        0.95,  # CO - Standard
+        1.20,  # BTN - Loose (play 60% more hands)
+        0.90,  # SB - Slightly tight (bad position post-flop)
+        0.95   # BB - Standard (already invested)
+    ])
+    
+    # Clamp position to valid range
+    safe_position = jnp.clip(position, 0, 5)
+    return position_values[safe_position]
+
+@jax.jit
+def classify_starting_hand_with_position(hole_cards: jnp.ndarray, position: int) -> jnp.ndarray:
+    """
+    Clasifica starting hand con position awareness.
+    
+    Args:
+        hole_cards: Array de 2 cartas
+        position: 0=UTG, 1=MP, 2=CO, 3=BTN, 4=SB, 5=BB
+    
+    Returns:
+        hand_strength ajustada por posición (0.0-1.0)
+    """
+    base_strength = classify_starting_hand(hole_cards)
+    position_multiplier = get_position_multiplier(position)
+    
+    # Aplicar position multiplier
+    adjusted_strength = base_strength * position_multiplier
+    
+    # Clamp para mantener rango válido
+    return jnp.clip(adjusted_strength, 0.05, 0.98) 

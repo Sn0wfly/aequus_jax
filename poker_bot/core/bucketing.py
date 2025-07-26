@@ -12,6 +12,9 @@ from jax import lax
 from typing import Dict, Any
 import logging
 
+# Import for position-aware hand evaluation
+from .starting_hands import classify_starting_hand_with_position
+
 logger = logging.getLogger(__name__)
 
 # Constants for bucketing
@@ -30,23 +33,40 @@ def compute_info_set_id(hole_cards: jnp.ndarray, community_cards: jnp.ndarray,
                        stack_size: jnp.ndarray = None, action_history: jnp.ndarray = None,
                        max_info_sets: int = 100000) -> jnp.ndarray:
     """
-    Versión simplificada y robusta para el cálculo del Info Set ID.
-    Se centra en la fuerza de la mano y la calle para permitir la generalización.
-    OPTIMIZADA PARA PRODUCCIÓN - Genera solo 876 buckets únicos máximo.
+    Incluye position en el cálculo del info set.
     """
-    # 1. Bucket de la calle (Preflop, Flop, Turn, River)
-    street_bucket = _compute_street_bucket(community_cards)
-
-    # 2. Bucket de la mano (169 categorías para preflop, extendido para postflop)
-    hand_bucket = _compute_hand_bucket(hole_cards, community_cards)
-
-    # 3. Combinación simple - SOLO mano + calle
-    # Usamos un gran multiplicador para la calle para asegurar que no haya solapamiento.
-    # El número total de buckets de mano es relativamente pequeño (~219).
-    info_set_id = (street_bucket * 1000) + hand_bucket
-
-    # Asegurarse de que el ID esté dentro del rango de la tabla de regrets.
-    return jnp.clip(jnp.mod(info_set_id, max_info_sets), 0, max_info_sets - 1).astype(jnp.int32)
+    # Hand strength con position awareness
+    num_community = jnp.sum(community_cards >= 0)
+    
+    hand_strength = jnp.where(
+        num_community == 0,  # Preflop
+        classify_starting_hand_with_position(hole_cards, player_idx),
+        # Post-flop (usar evaluación existente)
+        _evaluate_postflop_hand(hole_cards, community_cards)
+    )
+    
+    # Incluir position en hash
+    position_component = player_idx * 1000
+    
+    # Calcular componentes adicionales
+    street_component = _compute_street_bucket(community_cards) * 100
+    
+    # Pot component (simplificado)
+    pot_component = jnp.where(
+        pot_size is not None,
+        jnp.clip(jnp.int32(pot_size[0] / 10), 0, 99),  # Bucket pot size
+        jnp.int32(0)
+    )
+    
+    # Combinar todos los componentes
+    combined_hash = (
+        jnp.int32(hand_strength * 1000) +
+        position_component +
+        pot_component +
+        street_component
+    ) % max_info_sets
+    
+    return jnp.clip(combined_hash, 0, max_info_sets - 1).astype(jnp.int32)
 
 @jax.jit
 def _compute_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
@@ -121,6 +141,28 @@ def _compute_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) 
     
     # El resultado final es un ID único y garantizado
     return (bucket + postflop_adjustment).astype(jnp.int32)
+
+@jax.jit
+def _evaluate_postflop_hand(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
+    """
+    Evaluación postflop simplificada para bucketing.
+    Retorna un valor entre 0.0 y 1.0 basado en la fuerza de la mano.
+    """
+    # Combinar todas las cartas
+    all_cards = jnp.concatenate([hole_cards, community_cards])
+    
+    # Máscara para cartas válidas (>= 0)
+    valid_mask = all_cards >= 0
+    num_valid = jnp.sum(valid_mask)
+    
+    # Si no hay suficientes cartas, retornar fuerza mínima
+    strength = jnp.where(
+        num_valid < 5,  # Necesitamos al menos 5 cartas para evaluar
+        0.1,  # Fuerza mínima
+        _compute_hand_strength_estimate(hole_cards, community_cards)
+    )
+    
+    return jnp.clip(strength, 0.0, 1.0)
 
 @jax.jit
 def _compute_street_bucket(community_cards: jnp.ndarray) -> jnp.ndarray:
