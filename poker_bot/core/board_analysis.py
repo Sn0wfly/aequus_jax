@@ -42,33 +42,32 @@ def analyze_board_texture(community_cards: jnp.ndarray) -> jnp.ndarray:
             rank_counts
         )
     
-    # Detectar secuencias
-    consecutive_ranks = 0
-    for start_rank in range(11):
-        has_rank = rank_counts[start_rank] > 0
-        has_next = rank_counts[start_rank + 1] > 0
-        has_after = rank_counts[start_rank + 2] > 0
-        consecutive_ranks = jnp.where(
-            has_rank & has_next,
-            jnp.maximum(consecutive_ranks, 2),
-            consecutive_ranks
-        )
-        consecutive_ranks = jnp.where(
-            has_rank & has_next & has_after,
-            jnp.maximum(consecutive_ranks, 3),
-            consecutive_ranks
-        )
-    
-    straight_potential = jnp.where(consecutive_ranks >= 2, 0.3, 0.0)
-    
-    # PAIRED BOARDS
+    # Detectar secuencias CORRECTAMENTE
+    straight_potential = 0.0
+    for start_rank in range(9):  # 0-8 para evitar overflow (A-5 hasta 9-K)
+        # Verificar ventanas de 3 cartas consecutivas
+        window_count = 0
+        for offset in range(3):  # Verificar 3 cartas consecutivas
+            if start_rank + offset < 13:  # Evitar overflow
+                window_count += jnp.where(rank_counts[start_rank + offset] > 0, 1, 0)
+        
+        # Solo dar straight potential si hay 2+ cartas en secuencia Y están realmente conectadas
+        is_connected = window_count >= 2
+        straight_potential = jnp.maximum(straight_potential, jnp.where(is_connected, 0.3, 0.0))
+
+    # Wheel straight special case (A-2-3-4-5)
+    wheel_count = jnp.sum(rank_counts[[12, 0, 1, 2, 3]] > 0)  # A, 2, 3, 4, 5
+    has_wheel_draw = wheel_count >= 2
+    straight_potential = jnp.maximum(straight_potential, jnp.where(has_wheel_draw, 0.3, 0.0))
+
+    # PAIRED BOARDS - versión menos agresiva
     max_rank_count = jnp.max(rank_counts)
     pairs_count = jnp.sum(rank_counts >= 2)
-    
+
     pair_texture = jnp.where(
-        max_rank_count >= 3, 0.8,
-        jnp.where(pairs_count >= 2, 0.6,
-                  jnp.where(max_rank_count == 2, 0.3, 0.0))
+        max_rank_count >= 3, 0.6,  # Trips/quads (reducido de 0.8)
+        jnp.where(pairs_count >= 2, 0.4,  # Two pair (reducido de 0.6)
+                  jnp.where(max_rank_count == 2, 0.2, 0.0))  # Un par (reducido de 0.3)
     )
     
     # HIGH CARDS
