@@ -84,7 +84,7 @@ def accumulate_regrets_fixed(
     sampling_mask = sampling_mask.astype(jnp.bool_)
     # Only process sampled info sets
     valid_mask = sampling_mask & (info_set_indices >= 0) & (info_set_indices < regrets.shape[0])
-    # Get valid indices and regrets, apply learning rate
+    # Get valid indices and regrets, apply learning rate!
     valid_indices = jnp.where(valid_mask, info_set_indices, 0).astype(jnp.int32)
     valid_regrets = jnp.where(valid_mask[:, None], action_regrets * learning_rate, jnp.zeros_like(action_regrets)).astype(jnp.float32)
     # Ensure scatter_add parameters are correct
