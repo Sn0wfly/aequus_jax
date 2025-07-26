@@ -530,7 +530,7 @@ def _cfr_step_with_mccfr(
         # jax.debug.print("  action_values shape: {}, dtype: {}", action_values.shape, action_values.dtype)
         return info_set_indices, action_values
     # DEBUG: Before batch processing
-    # jax.debug.print("🔄 BATCH PROCESSING...")
+    jax.debug.print("🔄 BATCH PROCESSING...")
     batch_indices = jnp.arange(config.batch_size)
     batch_info_sets, batch_action_values = jax.vmap(process_single_game)(batch_indices)
     # DEBUG: Validate batch processing outputs
@@ -544,13 +544,14 @@ def _cfr_step_with_mccfr(
     flat_info_sets_safe = flat_info_sets.astype(jnp.int32)
     visited_mask = visited_mask.at[flat_info_sets_safe].set(True)
     # DEBUG: Validate flattened data
-    # jax.debug.print("  flat_info_sets shape: {}, dtype: {}", flat_info_sets.shape, flat_info_sets.dtype)
-    # jax.debug.print("  flat_action_values shape: {}, dtype: {}", flat_action_values.shape, flat_action_values.dtype)
-    # jax.debug.print("  visited_mask sum: {}", jnp.sum(visited_mask))
+    jax.debug.print("  flat_action_values shape: {}, dtype: {}", flat_action_values.shape, flat_action_values.dtype)
+    jax.debug.print("  flat_action_values min: {}, max: {}, mean: {}", jnp.min(flat_action_values), jnp.max(flat_action_values), jnp.mean(flat_action_values))
+    jax.debug.print("  visited_mask sum: {}", jnp.sum(visited_mask))
     # MCCFR operations
     from .mccfr_algorithm import mc_sampling_strategy, cfr_iteration
     game_key = jax.random.fold_in(key, iteration)
     sampling_mask = mc_sampling_strategy(regrets, flat_info_sets, game_key)
+    jax.debug.print("  sampling_mask sum: {}", jnp.sum(sampling_mask))
     updated_regrets, updated_strategy = cfr_iteration(
         regrets, strategy, flat_info_sets, flat_action_values, sampling_mask, 
         iteration, config.learning_rate, config.use_regret_discounting
