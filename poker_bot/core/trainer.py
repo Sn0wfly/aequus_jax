@@ -43,11 +43,11 @@ def apply_action_to_state(simulated_state, player_idx, action_idx):
     # Lógica específica por fuerza de mano
     if action_idx == 0:  # FOLD
         # FOLD es bueno con manos débiles, malo con manos fuertes
-        fold_value = jnp.where(hand_strength < 0.3, base_payoff + 200, base_payoff - 300)
+        fold_value = jnp.where(hand_strength < 0.3, base_payoff + 1000, base_payoff - 1500)
         simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(fold_value)
     elif action_idx in [3,4,5,6,7,8]:  # Aggressive actions  
         # Agresividad es buena con manos fuertes, mala con manos débiles
-        aggro_value = jnp.where(hand_strength > 0.7, base_payoff + 300, base_payoff - 200)
+        aggro_value = jnp.where(hand_strength > 0.7, base_payoff + 1500, base_payoff - 1000)
         simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(aggro_value)
     else:  # CHECK/CALL
         # Neutral con variación pequeña
