@@ -123,7 +123,7 @@ def get_street_multiplier(num_community_cards: int) -> float:
 def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
     """
     Analiza qué tan bien conecta nuestra mano con el board.
-    100% compatible con JAX JIT.
+    MEJORADO: Detecta overpairs vs underpairs correctamente.
     """
     num_community = jnp.sum(community_cards >= 0)
     
@@ -132,18 +132,30 @@ def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray)
     all_suit_counts = jnp.zeros(4, dtype=jnp.int32)
     
     # Hole cards
+    hole_ranks = hole_cards // 4
+    hole_suits = hole_cards % 4
+    
     for i in range(2):
-        rank = hole_cards[i] // 4
-        suit = hole_cards[i] % 4
+        rank = hole_ranks[i]
+        suit = hole_suits[i]
         all_rank_counts = all_rank_counts.at[rank].add(1)
         all_suit_counts = all_suit_counts.at[suit].add(1)
     
     # Community cards
     max_community = jnp.minimum(num_community, 5)
+    board_ranks = jnp.zeros(5, dtype=jnp.int32)
+    
     for i in range(5):
         valid_card = jnp.where(i < max_community, community_cards[i], -1)
         rank = jnp.where(valid_card >= 0, valid_card // 4, 0)
         suit = jnp.where(valid_card >= 0, valid_card % 4, 0)
+        
+        # Store board ranks for overpair detection
+        board_ranks = jnp.where(
+            (i < max_community) & (valid_card >= 0),
+            board_ranks.at[i].set(rank),
+            board_ranks
+        )
         
         all_rank_counts = jnp.where(
             valid_card >= 0,
@@ -156,22 +168,41 @@ def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray)
             all_suit_counts
         )
     
-    # Evaluar fuerza
+    # Evaluar fuerza base
     max_rank_count = jnp.max(all_rank_counts)
     max_suit_count = jnp.max(all_suit_counts)
     pairs_count = jnp.sum(all_rank_counts >= 2)
     
+    # NUEVO: Detectar overpair vs underpair
+    is_pocket_pair = hole_ranks[0] == hole_ranks[1]
+    
+    # Si tenemos pocket pair, verificar si es overpair
+    highest_board_rank = jnp.where(
+        num_community >= 3,
+        jnp.max(board_ranks[:max_community]),
+        0
+    )
+    
+    is_overpair = is_pocket_pair & (hole_ranks[0] > highest_board_rank) & (num_community >= 3)
+    
+    # MEJORADO: Scoring con overpair detection
     made_hand_strength = jnp.where(
-        max_rank_count >= 4, 1.0,
+        max_rank_count >= 4, 1.0,  # Quads
         jnp.where(
-            (max_rank_count >= 3) & (pairs_count >= 2), 0.95,
+            (max_rank_count >= 3) & (pairs_count >= 2), 0.95,  # Full house
             jnp.where(
-                max_suit_count >= 5, 0.9,
+                max_suit_count >= 5, 0.9,  # Flush
                 jnp.where(
-                    max_rank_count >= 3, 0.7,
+                    max_rank_count >= 3, 0.7,  # Trips
                     jnp.where(
-                        pairs_count >= 2, 0.5,
-                        jnp.where(max_rank_count >= 2, 0.3, 0.1)
+                        pairs_count >= 2, 0.5,  # Two pair
+                        jnp.where(
+                            is_overpair, 0.75,  # *** OVERPAIR FUERTE ***
+                            jnp.where(
+                                max_rank_count >= 2, 0.3,  # Regular pair
+                                0.1  # High card
+                            )
+                        )
                     )
                 )
             )
@@ -179,7 +210,6 @@ def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray)
     )
     
     # DRAWS
-    hole_suits = hole_cards % 4
     suited_hole = hole_suits[0] == hole_suits[1]
     our_suit_count = jnp.where(
         suited_hole,
@@ -187,7 +217,6 @@ def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray)
         0
     )
     
-    # Solo en flop/turn (no river)
     draw_strength = jnp.where(
         num_community < 5,
         jnp.where(
@@ -199,5 +228,4 @@ def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray)
     
     final_strength = jnp.clip(made_hand_strength + draw_strength, 0.0, 1.0)
     
-    # Si preflop, retornar neutral
     return jnp.where(num_community >= 3, final_strength, 0.5) 
