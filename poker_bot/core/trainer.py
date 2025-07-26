@@ -50,8 +50,11 @@ def apply_action_to_state(simulated_state, player_idx, action_idx):
         aggro_value = jnp.where(hand_strength > 0.7, base_payoff + 1500, base_payoff - 1000)
         simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(aggro_value)
     else:  # CHECK/CALL
-        # Neutral con variación pequeña
-        neutral_value = base_payoff + jax.random.normal(jax.random.PRNGKey(42), ()) * 25
+        # Penalizar check/call con manos muy débiles
+        neutral_value = jnp.where(
+            hand_strength < 0.2, base_payoff - 800,  # Malo con trash
+            base_payoff + jax.random.normal(jax.random.PRNGKey(42), ()) * 25
+        )
         simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(neutral_value)
     
     return simulated_state
