@@ -523,10 +523,14 @@ def _cfr_step_with_mccfr(
         # jax.debug.print("  info_set_indices shape: {}, dtype: {}", info_set_indices.shape, info_set_indices.dtype)
         # jax.debug.print("  info_set_indices min: {}, max: {}", jnp.min(info_set_indices), jnp.max(info_set_indices))
         game_payoffs = payoffs[game_idx].astype(jnp.float32)
+        # CFR requires different payoffs per action
+        # For now, add small random variation to break symmetry
+        random_key = jax.random.fold_in(key, game_idx + 1000)
+        action_noise = jax.random.normal(random_key, (6, config.num_actions)) * 10.0
         action_values = jnp.broadcast_to(
             game_payoffs[:, None], 
             (6, config.num_actions)
-        ).astype(jnp.float32)
+        ).astype(jnp.float32) + action_noise
         # jax.debug.print("  action_values shape: {}, dtype: {}", action_values.shape, action_values.dtype)
         return info_set_indices, action_values
     # DEBUG: Before batch processing
