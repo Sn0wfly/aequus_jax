@@ -30,56 +30,22 @@ def compute_info_set_id(hole_cards: jnp.ndarray, community_cards: jnp.ndarray,
                        stack_size: jnp.ndarray = None, action_history: jnp.ndarray = None,
                        max_info_sets: int = 100000) -> jnp.ndarray:
     """
-    Compute unique info set ID for a player given their cards and game state.
-    Enhanced for NLHE with improved position and stack awareness.
-    Now configurable for max_info_sets.
-    
-    Args:
-        hole_cards: Player's hole cards [2] array
-        community_cards: Community cards [5] array (-1 for missing)
-        player_idx: Player index (0-5)
-        pot_size: Current pot size (optional)
-        stack_size: Player's stack size (optional)
-        action_history: Recent action history (optional)
-        
-    Returns:
-        Unique info set ID as int32
+    Versión simplificada y robusta para el cálculo del Info Set ID.
+    Se centra en la fuerza de la mano y la calle para permitir la generalización.
+    OPTIMIZADA PARA PRODUCCIÓN - Genera solo 876 buckets únicos máximo.
     """
-    
-    # Compute bucketing components
-    hand_bucket = _compute_hand_bucket(hole_cards, community_cards)
+    # 1. Bucket de la calle (Preflop, Flop, Turn, River)
     street_bucket = _compute_street_bucket(community_cards)
-    position_bucket = _compute_position_bucket(player_idx)
-    
-    # Enhanced stack and pot bucketing
-    if stack_size is not None:
-        stack_bucket = _compute_stack_bucket_enhanced(stack_size, pot_size)
-    else:
-        stack_bucket = jnp.int32(0)
-    
-    if pot_size is not None:
-        pot_bucket = _compute_pot_bucket_enhanced(pot_size, stack_size)
-    else:
-        pot_bucket = jnp.int32(0)
-    
-    # Action history bucketing for NLHE
-    if action_history is not None:
-        action_bucket = _compute_action_history_bucket(action_history)
-    else:
-        action_bucket = jnp.int32(0)
-    
-    # Combine all factors into unique ID with improved weighting
-    # Use larger ranges for more important factors
-    info_set_id = (
-        street_bucket * 100000 +     # 4 * 100000 = 400,000
-        hand_bucket * 2000 +         # 169 * 2000 = 338,000
-        position_bucket * 300 +      # 6 * 300 = 1,800
-        stack_bucket * 15 +          # 20 * 15 = 300
-        pot_bucket * 3 +             # 10 * 3 = 30
-        action_bucket                # 9 * 1 = 9
-    )
-    
-    # Ensure within valid range (configurable)
+
+    # 2. Bucket de la mano (169 categorías para preflop, extendido para postflop)
+    hand_bucket = _compute_hand_bucket(hole_cards, community_cards)
+
+    # 3. Combinación simple - SOLO mano + calle
+    # Usamos un gran multiplicador para la calle para asegurar que no haya solapamiento.
+    # El número total de buckets de mano es relativamente pequeño (~219).
+    info_set_id = (street_bucket * 1000) + hand_bucket
+
+    # Asegurarse de que el ID esté dentro del rango de la tabla de regrets.
     return jnp.clip(jnp.mod(info_set_id, max_info_sets), 0, max_info_sets - 1).astype(jnp.int32)
 
 @jax.jit
