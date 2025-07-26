@@ -126,8 +126,8 @@ def _compute_hand_strength_fixed_size(all_cards: jnp.ndarray, valid_mask: jnp.nd
     suits = jnp.where(valid_mask, all_cards % 4, 0)
     
     # Contar rangos (0-12) y palos (0-3)
-    rank_counts = jnp.zeros(13)
-    suit_counts = jnp.zeros(4)
+    rank_counts = jnp.zeros(13, dtype=jnp.int32)
+    suit_counts = jnp.zeros(4, dtype=jnp.int32)
     
     # Acumular conteos usando scatter_add
     for i in range(7):  # Procesar las 7 posiciones

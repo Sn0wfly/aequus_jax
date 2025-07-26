@@ -42,8 +42,8 @@ def _compute_hand_strength_bot(all_cards: jnp.ndarray, valid_mask: jnp.ndarray) 
     ranks = jnp.where(valid_mask, all_cards // 4, 0)
     suits = jnp.where(valid_mask, all_cards % 4, 0)
     
-    rank_counts = jnp.zeros(13)
-    suit_counts = jnp.zeros(4)
+    rank_counts = jnp.zeros(13, dtype=jnp.int32)
+    suit_counts = jnp.zeros(4, dtype=jnp.int32)
     
     for i in range(7):
         rank_counts = rank_counts.at[ranks[i]].add(jnp.where(valid_mask[i], 1, 0))
