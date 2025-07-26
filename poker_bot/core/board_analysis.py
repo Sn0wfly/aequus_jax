@@ -6,100 +6,64 @@ from typing import Tuple
 def analyze_board_texture(community_cards: jnp.ndarray) -> jnp.ndarray:
     """
     Analiza textura del board: wet (draws) vs dry (estático).
-    100% compatible con JAX JIT - sin if statements.
+    VERSIÓN CORREGIDA - sin código duplicado ni wheel detection incorrecta.
     """
-    # Contar cartas válidas
     num_cards = jnp.sum(community_cards >= 0)
-    
-    # Procesar cartas (máximo 5)
     max_cards = jnp.minimum(num_cards, 5)
     
     # FLUSH DRAWS
     suit_counts = jnp.zeros(4, dtype=jnp.int32)
+    rank_counts = jnp.zeros(13, dtype=jnp.int32)
+    
     for i in range(5):
         valid_card = jnp.where(i < max_cards, community_cards[i], -1)
         suit = jnp.where(valid_card >= 0, valid_card % 4, 0)
+        rank = jnp.where(valid_card >= 0, valid_card // 4, 0)
+        
         suit_counts = jnp.where(
             valid_card >= 0,
             suit_counts.at[suit].add(1),
             suit_counts
         )
+        rank_counts = jnp.where(
+            valid_card >= 0,
+            rank_counts.at[rank].add(1),
+            rank_counts
+        )
     
+    # Flush draw strength
     max_suit_count = jnp.max(suit_counts)
     flush_draw_strength = jnp.where(
         max_suit_count >= 3, 0.4,
         jnp.where(max_suit_count == 2, 0.2, 0.0)
     )
     
-    # STRAIGHT DRAWS
-    rank_counts = jnp.zeros(13, dtype=jnp.int32)
-    for i in range(5):
-        valid_card = jnp.where(i < max_cards, community_cards[i], -1)
-        rank = jnp.where(valid_card >= 0, valid_card // 4, 0)
-        rank_counts = jnp.where(
-            valid_card >= 0,
-            rank_counts.at[rank].add(1),
-            rank_counts
-        )
-    
-    # STRAIGHT DRAWS - versión 100% JAX compatible
-    rank_counts = jnp.zeros(13, dtype=jnp.int32)
-    for i in range(5):
-        valid_card = jnp.where(i < max_cards, community_cards[i], -1)
-        rank = jnp.where(valid_card >= 0, valid_card // 4, 0)
-        rank_counts = jnp.where(
-            valid_card >= 0,
-            rank_counts.at[rank].add(1),
-            rank_counts
-        )
-
-    # Detectar secuencias de forma simple y compatible
+    # STRAIGHT DRAWS - versión estricta
     straight_potential = 0.0
-
-    # Check for regular straights (no wheel)
-    for start_rank in range(9):  # 0-8 (2-3-4 hasta T-J-Q)
-        consecutive_cards = 0
-        for offset in range(3):  # Ventana de 3 cartas
+    
+    # Solo considerar straight si hay 3+ cartas conectadas
+    for start_rank in range(11):  # 0-10
+        connected_sequence = 0
+        for offset in range(3):
             if start_rank + offset < 13:
                 has_card = rank_counts[start_rank + offset] > 0
-                consecutive_cards += jnp.where(has_card, 1, 0)
+                connected_sequence += jnp.where(has_card, 1, 0)
         
-        # Si hay 2+ cartas consecutivas, hay straight potential
-        has_potential = consecutive_cards >= 2
+        # STRICT: Solo dar potential si hay 3 cartas conectadas
+        has_real_potential = connected_sequence >= 3
         straight_potential = jnp.maximum(
-            straight_potential, 
-            jnp.where(has_potential, 0.3, 0.0)
+            straight_potential,
+            jnp.where(has_real_potential, 0.3, 0.0)
         )
-
-    # Wheel straight (A-2-3-4-5) - versión JAX compatible
-    ace_count = rank_counts[12]  # A
-    two_count = rank_counts[0]   # 2
-    three_count = rank_counts[1] # 3
-    four_count = rank_counts[2]  # 4
-    five_count = rank_counts[3]  # 5
-
-    wheel_cards = (
-        jnp.where(ace_count > 0, 1, 0) +
-        jnp.where(two_count > 0, 1, 0) +
-        jnp.where(three_count > 0, 1, 0) +
-        jnp.where(four_count > 0, 1, 0) +
-        jnp.where(five_count > 0, 1, 0)
-    )
-
-    has_wheel_potential = wheel_cards >= 2
-    straight_potential = jnp.maximum(
-        straight_potential,
-        jnp.where(has_wheel_potential, 0.3, 0.0)
-    )
-
-    # PAIRED BOARDS - versión menos agresiva
+    
+    # PAIRED BOARDS
     max_rank_count = jnp.max(rank_counts)
     pairs_count = jnp.sum(rank_counts >= 2)
-
+    
     pair_texture = jnp.where(
-        max_rank_count >= 3, 0.6,  # Trips/quads (reducido de 0.8)
-        jnp.where(pairs_count >= 2, 0.4,  # Two pair (reducido de 0.6)
-                  jnp.where(max_rank_count == 2, 0.2, 0.0))  # Un par (reducido de 0.3)
+        max_rank_count >= 3, 0.6,
+        jnp.where(pairs_count >= 2, 0.4,
+                  jnp.where(max_rank_count == 2, 0.2, 0.0))
     )
     
     # HIGH CARDS
@@ -110,7 +74,7 @@ def analyze_board_texture(community_cards: jnp.ndarray) -> jnp.ndarray:
         0.0
     )
     
-    # COMBINAR FACTORES
+    # COMBINAR
     total_wetness = (
         flush_draw_strength + 
         straight_potential + 
@@ -118,7 +82,7 @@ def analyze_board_texture(community_cards: jnp.ndarray) -> jnp.ndarray:
         high_card_factor
     )
     
-    # Si menos de 3 cartas, retornar neutral (0.5)
+    # Return final result
     final_wetness = jnp.where(
         num_cards >= 3,
         jnp.clip(total_wetness, 0.0, 1.0),
