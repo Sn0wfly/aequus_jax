@@ -20,6 +20,7 @@ from functools import partial
 from . import full_game_engine as game_engine
 from .bucketing import compute_info_set_id, validate_bucketing_system
 from .mccfr_algorithm import MCCFRTrainer, mc_sampling_strategy, accumulate_regrets_fixed, calculate_strategy_optimized
+from .starting_hands import classify_starting_hand
 
 # CFR Counterfactual Simulation Functions
 def copy_game_state(game_state):
@@ -153,33 +154,16 @@ def _evaluate_7card_simple(hole_cards: jnp.ndarray, community_cards: jnp.ndarray
     valid_mask = all_cards >= 0
     num_valid = jnp.sum(valid_mask)
     
-    # ARREGLO: Detectar pocket pairs altos EN PREFLOP (JAX compatible)
-    def evaluate_pocket_pairs():
-        ranks_valid = jnp.where(valid_mask[:2], all_cards[:2] // 4, -1)
-        is_pair = ranks_valid[0] == ranks_valid[1]
-        pair_rank = ranks_valid[0]
-        
-        return jnp.where(
-            is_pair & (pair_rank >= 11), 0.95,  # AA, KK
-            jnp.where(
-                is_pair & (pair_rank >= 9), 0.85,   # QQ, JJ
-                jnp.where(
-                    is_pair & (pair_rank >= 6), 0.65,   # TT-77
-                    jnp.where(
-                        is_pair, 0.45,  # 66-22
-                        _compute_hand_strength_fixed_size(all_cards, valid_mask)
-                    )
-                )
-            )
-        )
+    def evaluate_preflop_hand():
+        return classify_starting_hand(all_cards[:2])
 
     # Si hay menos de 2 cartas válidas, retornar fuerza mínima
     strength = jnp.where(
         num_valid < 2,
         0.1,  # Fuerza mínima
         jnp.where(
-            num_valid == 2,  # Pre-flop: evaluar pocket pairs
-            evaluate_pocket_pairs(),
+            num_valid == 2,  # Pre-flop: evaluar starting hands profesionales
+            evaluate_preflop_hand(),
             _compute_hand_strength_fixed_size(all_cards, valid_mask)
         )
     )
