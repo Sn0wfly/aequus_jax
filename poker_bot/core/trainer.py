@@ -128,7 +128,7 @@ class TrainerConfig:
         )
 
 # ==============================================================================
-# FUNCIONES PURAS COMPILADAS CON JIT (FUERA DE LA CLASE)
+# FUNCIONES PURAS COMPILADAS CON JIT (FUERA DE LA CLASE)!
 # ==============================================================================
 
 @jax.jit
