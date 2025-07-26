@@ -150,11 +150,35 @@ def _evaluate_7card_simple(hole_cards: jnp.ndarray, community_cards: jnp.ndarray
     valid_mask = all_cards >= 0
     num_valid = jnp.sum(valid_mask)
     
+    # ARREGLO: Detectar pocket pairs altos EN PREFLOP (JAX compatible)
+    def evaluate_pocket_pairs():
+        ranks_valid = jnp.where(valid_mask[:2], all_cards[:2] // 4, -1)
+        is_pair = ranks_valid[0] == ranks_valid[1]
+        pair_rank = ranks_valid[0]
+        
+        return jnp.where(
+            is_pair & (pair_rank >= 11), 0.95,  # AA, KK
+            jnp.where(
+                is_pair & (pair_rank >= 9), 0.85,   # QQ, JJ
+                jnp.where(
+                    is_pair & (pair_rank >= 6), 0.65,   # TT-77
+                    jnp.where(
+                        is_pair, 0.45,  # 66-22
+                        _compute_hand_strength_fixed_size(all_cards, valid_mask)
+                    )
+                )
+            )
+        )
+
     # Si hay menos de 2 cartas válidas, retornar fuerza mínima
     strength = jnp.where(
         num_valid < 2,
         0.1,  # Fuerza mínima
-        _compute_hand_strength_fixed_size(all_cards, valid_mask)
+        jnp.where(
+            num_valid == 2,  # Pre-flop: evaluar pocket pairs
+            evaluate_pocket_pairs(),
+            _compute_hand_strength_fixed_size(all_cards, valid_mask)
+        )
     )
     
     return jnp.clip(strength, 0.0, 1.0)
@@ -181,23 +205,6 @@ def _compute_hand_strength_fixed_size(all_cards: jnp.ndarray, valid_mask: jnp.nd
     trips = jnp.sum(rank_counts == 3)
     quads = jnp.sum(rank_counts == 4)
     is_flush = jnp.any(suit_counts >= 5)
-    
-    # ARREGLO: Detectar pocket pairs altos
-    if num_valid == 2:  # Pre-flop, solo hole cards
-        ranks_sorted = jnp.sort(ranks[:2])
-        is_pair = ranks_sorted[0] == ranks_sorted[1]
-        pair_rank = ranks_sorted[0]
-        
-        # Pocket pairs especiales
-        if is_pair:
-            if pair_rank >= 11:  # AA, KK  
-                return 0.95
-            elif pair_rank >= 9:   # QQ, JJ
-                return 0.85  
-            elif pair_rank >= 6:   # TT, 99, 88, 77
-                return 0.65
-            else:                  # 66, 55, 44, 33, 22
-                return 0.45
     
     # Carta más alta (normalizada)
     high_card = jnp.max(jnp.where(valid_mask, ranks, 0)) / 12.0
