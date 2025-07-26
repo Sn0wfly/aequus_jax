@@ -32,21 +32,27 @@ def copy_game_state(game_state):
     }
 
 def apply_action_to_state(simulated_state, player_idx, action_idx):
-    """Apply a specific action to the simulated game state."""
-    # For now, we'll use a simplified action application
-    # This can be enhanced with full game engine integration
+    """Apply action with hand-strength awareness."""
     base_payoff = simulated_state['payoffs'][player_idx]
     
-    # Apply action-specific modifications
+    # Evaluar fuerza de mano del jugador
+    hole_cards = simulated_state['hole_cards'][player_idx]
+    community_cards = simulated_state['community_cards']
+    hand_strength = _evaluate_7card_simple(hole_cards, community_cards)
+    
+    # Lógica específica por fuerza de mano
     if action_idx == 0:  # FOLD
-        # Folding typically results in losing the current bet
-        simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(base_payoff - 50)
-    elif action_idx in [3, 4, 5, 6, 7, 8]:  # Aggressive actions
-        # Aggressive actions can win more or lose more
-        simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(base_payoff + 100)
+        # FOLD es bueno con manos débiles, malo con manos fuertes
+        fold_value = jnp.where(hand_strength < 0.3, base_payoff + 200, base_payoff - 300)
+        simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(fold_value)
+    elif action_idx in [3,4,5,6,7,8]:  # Aggressive actions  
+        # Agresividad es buena con manos fuertes, mala con manos débiles
+        aggro_value = jnp.where(hand_strength > 0.7, base_payoff + 300, base_payoff - 200)
+        simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(aggro_value)
     else:  # CHECK/CALL
-        # Neutral action, small variation
-        simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(base_payoff + 25)
+        # Neutral con variación pequeña
+        neutral_value = base_payoff + jax.random.normal(jax.random.PRNGKey(42), ()) * 25
+        simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(neutral_value)
     
     return simulated_state
 
@@ -175,6 +181,23 @@ def _compute_hand_strength_fixed_size(all_cards: jnp.ndarray, valid_mask: jnp.nd
     trips = jnp.sum(rank_counts == 3)
     quads = jnp.sum(rank_counts == 4)
     is_flush = jnp.any(suit_counts >= 5)
+    
+    # ARREGLO: Detectar pocket pairs altos
+    if num_valid == 2:  # Pre-flop, solo hole cards
+        ranks_sorted = jnp.sort(ranks[:2])
+        is_pair = ranks_sorted[0] == ranks_sorted[1]
+        pair_rank = ranks_sorted[0]
+        
+        # Pocket pairs especiales
+        if is_pair:
+            if pair_rank >= 11:  # AA, KK  
+                return 0.95
+            elif pair_rank >= 9:   # QQ, JJ
+                return 0.85  
+            elif pair_rank >= 6:   # TT, 99, 88, 77
+                return 0.65
+            else:                  # 66, 55, 44, 33, 22
+                return 0.45
     
     # Carta más alta (normalizada)
     high_card = jnp.max(jnp.where(valid_mask, ranks, 0)) / 12.0
