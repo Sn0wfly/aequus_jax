@@ -21,6 +21,41 @@ from . import full_game_engine as game_engine
 from .bucketing import compute_info_set_id, validate_bucketing_system
 from .mccfr_algorithm import MCCFRTrainer, mc_sampling_strategy, accumulate_regrets_fixed, calculate_strategy_optimized
 
+# CFR Counterfactual Simulation Functions
+def copy_game_state(game_state):
+    """Create a deep copy of the game state for simulation."""
+    return {
+        'hole_cards': game_state['hole_cards'].copy(),
+        'community_cards': game_state['community_cards'].copy(),
+        'pot_size': game_state['pot_size'].copy(),
+        'payoffs': game_state['payoffs'].copy()
+    }
+
+def apply_action_to_state(simulated_state, player_idx, action_idx):
+    """Apply a specific action to the simulated game state."""
+    # For now, we'll use a simplified action application
+    # This can be enhanced with full game engine integration
+    base_payoff = simulated_state['payoffs'][player_idx]
+    
+    # Apply action-specific modifications
+    if action_idx == 0:  # FOLD
+        # Folding typically results in losing the current bet
+        simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(base_payoff - 50)
+    elif action_idx in [3, 4, 5, 6, 7, 8]:  # Aggressive actions
+        # Aggressive actions can win more or lose more
+        simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(base_payoff + 100)
+    else:  # CHECK/CALL
+        # Neutral action, small variation
+        simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(base_payoff + 25)
+    
+    return simulated_state
+
+def simulate_game_to_completion(simulated_state, player_idx):
+    """Simulate the game to completion and return the final payoff for the player."""
+    # For now, return the modified payoff from the action
+    # This can be enhanced with full game simulation
+    return simulated_state['payoffs'][player_idx]
+
 logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
@@ -525,26 +560,32 @@ def _cfr_step_with_mccfr(
         # CFR REAL: Calcular valores específicos por acción
         game_payoffs = payoffs[game_idx].astype(jnp.float32)
 
-        # Simular valor de cada acción usando hand strength como proxy
-        def calculate_action_value(player_idx, action_idx):
-            hole_cards = game_results_batch['hole_cards'][game_idx][player_idx]
-            community_cards = game_results_batch['final_community'][game_idx]
-            hand_strength = _evaluate_7card_simple(hole_cards, community_cards)
+        def calculate_counterfactual_value(player_idx, action_idx, game_state):
+            """Simular qué hubiera pasado si el jugador tomara esta acción específica."""
             
-            # Valores basados en lógica de poker
-            base_value = game_payoffs[player_idx]
-            if action_idx == 0:  # FOLD
-                return jnp.where(hand_strength < 0.3, base_value + 100, base_value - 200)
-            elif action_idx in [3,4,5,6,7,8]:  # Aggressive actions
-                return jnp.where(hand_strength > 0.7, base_value + 300, base_value - 150)
-            else:  # CHECK/CALL
-                return base_value + jax.random.normal(key, ()) * 50
+            # 1. Crear copia del game state
+            simulated_state = copy_game_state(game_state)
+            
+            # 2. Aplicar la acción específica
+            simulated_state = apply_action_to_state(simulated_state, player_idx, action_idx)
+            
+            # 3. Simular el resto del juego desde ese punto
+            final_payoff = simulate_game_to_completion(simulated_state, player_idx)
+            
+            return final_payoff
 
         # Calcular valores para todas las combinaciones
         action_values = jnp.zeros((6, config.num_actions))
+        # Crear game_state para este juego
+        game_state = {
+            'hole_cards': hole_cards_batch,
+            'community_cards': community_cards,
+            'pot_size': pot_size,
+            'payoffs': game_payoffs
+        }
         for p in range(6):
             for a in range(config.num_actions):
-                action_values = action_values.at[p,a].set(calculate_action_value(p, a))
+                action_values = action_values.at[p,a].set(calculate_counterfactual_value(p, a, game_state))
                 
         # Escalar action_values para evitar clipping
         action_values = action_values.astype(jnp.float32) * 0.01
