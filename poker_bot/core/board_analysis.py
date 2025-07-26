@@ -180,7 +180,7 @@ def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray)
             jnp.where(
                 max_suit_count >= 5, 0.9,  # Flush
                 jnp.where(
-                    max_rank_count >= 3, 0.7,  # Trips
+                    max_rank_count >= 3, 0.8,  # Trips (aumentado para sets)
                     jnp.where(
                         pairs_count >= 2, 0.5,  # Two pair
                         jnp.where(
