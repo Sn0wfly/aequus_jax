@@ -6,21 +6,17 @@ from typing import Tuple
 def analyze_board_texture(community_cards: jnp.ndarray) -> jnp.ndarray:
     """
     Analiza textura del board: wet (draws) vs dry (estático).
-    Compatible con JAX JIT - no usa boolean indexing.
+    100% compatible con JAX JIT - sin if statements.
     """
     # Contar cartas válidas
     num_cards = jnp.sum(community_cards >= 0)
     
-    # Si no hay flop, retornar neutral
-    if num_cards < 3:
-        return 0.5
-        
-    # Procesar solo las primeras num_cards (máximo 5)
+    # Procesar cartas (máximo 5)
     max_cards = jnp.minimum(num_cards, 5)
     
-    # FLUSH DRAWS - versión compatible con JIT
+    # FLUSH DRAWS
     suit_counts = jnp.zeros(4, dtype=jnp.int32)
-    for i in range(5):  # Máximo 5 community cards
+    for i in range(5):
         valid_card = jnp.where(i < max_cards, community_cards[i], -1)
         suit = jnp.where(valid_card >= 0, valid_card % 4, 0)
         suit_counts = jnp.where(
@@ -31,11 +27,11 @@ def analyze_board_texture(community_cards: jnp.ndarray) -> jnp.ndarray:
     
     max_suit_count = jnp.max(suit_counts)
     flush_draw_strength = jnp.where(
-        max_suit_count >= 3, 0.4,  # 3+ mismo palo = flush draw
-        jnp.where(max_suit_count == 2, 0.2, 0.0)  # 2 mismo palo = backdoor
+        max_suit_count >= 3, 0.4,
+        jnp.where(max_suit_count == 2, 0.2, 0.0)
     )
     
-    # STRAIGHT DRAWS - versión compatible con JIT
+    # STRAIGHT DRAWS
     rank_counts = jnp.zeros(13, dtype=jnp.int32)
     for i in range(5):
         valid_card = jnp.where(i < max_cards, community_cards[i], -1)
@@ -46,30 +42,36 @@ def analyze_board_texture(community_cards: jnp.ndarray) -> jnp.ndarray:
             rank_counts
         )
     
-    # Detectar secuencias (simplificado)
+    # Detectar secuencias
     consecutive_ranks = 0
-    for start_rank in range(11):  # 0-10 para evitar overflow
+    for start_rank in range(11):
         has_rank = rank_counts[start_rank] > 0
         has_next = rank_counts[start_rank + 1] > 0
         has_after = rank_counts[start_rank + 2] > 0
-        if has_rank & has_next:
-            consecutive_ranks = jnp.maximum(consecutive_ranks, 2)
-        if has_rank & has_next & has_after:
-            consecutive_ranks = jnp.maximum(consecutive_ranks, 3)
+        consecutive_ranks = jnp.where(
+            has_rank & has_next,
+            jnp.maximum(consecutive_ranks, 2),
+            consecutive_ranks
+        )
+        consecutive_ranks = jnp.where(
+            has_rank & has_next & has_after,
+            jnp.maximum(consecutive_ranks, 3),
+            consecutive_ranks
+        )
     
     straight_potential = jnp.where(consecutive_ranks >= 2, 0.3, 0.0)
-            
+    
     # PAIRED BOARDS
     max_rank_count = jnp.max(rank_counts)
     pairs_count = jnp.sum(rank_counts >= 2)
     
     pair_texture = jnp.where(
-        max_rank_count >= 3, 0.8,  # Trips/quads en board
-        jnp.where(pairs_count >= 2, 0.6,  # Two pair en board
-                  jnp.where(max_rank_count == 2, 0.3, 0.0))  # Un par
+        max_rank_count >= 3, 0.8,
+        jnp.where(pairs_count >= 2, 0.6,
+                  jnp.where(max_rank_count == 2, 0.3, 0.0))
     )
     
-    # HIGH CARDS (broadway) - ranks 9-12 (T, J, Q, K, A)
+    # HIGH CARDS
     high_cards = jnp.sum(rank_counts[9:13])
     high_card_factor = jnp.where(
         num_cards > 0,
@@ -85,7 +87,14 @@ def analyze_board_texture(community_cards: jnp.ndarray) -> jnp.ndarray:
         high_card_factor
     )
     
-    return jnp.clip(total_wetness, 0.0, 1.0)
+    # Si menos de 3 cartas, retornar neutral (0.5)
+    final_wetness = jnp.where(
+        num_cards >= 3,
+        jnp.clip(total_wetness, 0.0, 1.0),
+        0.5
+    )
+    
+    return final_wetness
 
 @jax.jit
 def get_street_multiplier(num_community_cards: int) -> float:
@@ -114,25 +123,22 @@ def get_street_multiplier(num_community_cards: int) -> float:
 def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
     """
     Analiza qué tan bien conecta nuestra mano con el board.
-    Compatible con JAX JIT.
+    100% compatible con JAX JIT.
     """
     num_community = jnp.sum(community_cards >= 0)
     
-    if num_community < 3:  # Preflop
-        return 0.5
-        
-    # Analizar cartas combinadas (hole + community)
+    # Analizar cartas combinadas
     all_rank_counts = jnp.zeros(13, dtype=jnp.int32)
     all_suit_counts = jnp.zeros(4, dtype=jnp.int32)
     
-    # Procesar hole cards
+    # Hole cards
     for i in range(2):
         rank = hole_cards[i] // 4
         suit = hole_cards[i] % 4
         all_rank_counts = all_rank_counts.at[rank].add(1)
         all_suit_counts = all_suit_counts.at[suit].add(1)
     
-    # Procesar community cards
+    # Community cards
     max_community = jnp.minimum(num_community, 5)
     for i in range(5):
         valid_card = jnp.where(i < max_community, community_cards[i], -1)
@@ -150,42 +156,48 @@ def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray)
             all_suit_counts
         )
     
-    # Evaluar fuerza de mano hecha
+    # Evaluar fuerza
     max_rank_count = jnp.max(all_rank_counts)
     max_suit_count = jnp.max(all_suit_counts)
     pairs_count = jnp.sum(all_rank_counts >= 2)
     
     made_hand_strength = jnp.where(
-        max_rank_count >= 4, 1.0,  # Quads
+        max_rank_count >= 4, 1.0,
         jnp.where(
-            (max_rank_count >= 3) & (pairs_count >= 2), 0.95,  # Full house
+            (max_rank_count >= 3) & (pairs_count >= 2), 0.95,
             jnp.where(
-                max_suit_count >= 5, 0.9,  # Flush
+                max_suit_count >= 5, 0.9,
                 jnp.where(
-                    max_rank_count >= 3, 0.7,  # Trips
+                    max_rank_count >= 3, 0.7,
                     jnp.where(
-                        pairs_count >= 2, 0.5,  # Two pair
-                        jnp.where(max_rank_count >= 2, 0.3, 0.1)  # One pair / high card
+                        pairs_count >= 2, 0.5,
+                        jnp.where(max_rank_count >= 2, 0.3, 0.1)
                     )
                 )
             )
         )
     )
     
-    # DRAWS (solo en flop/turn)
-    draw_strength = 0.0
-    if num_community < 5:  # No draws en river
-        # Flush draws - simplificado
-        hole_suits = hole_cards % 4
-        suited_hole = hole_suits[0] == hole_suits[1]
-        our_suit_count = jnp.where(
-            suited_hole,
-            all_suit_counts[hole_suits[0]],
-            0
-        )
-        draw_strength = jnp.where(
-            our_suit_count == 4, 0.4,  # Flush draw
-            jnp.where(our_suit_count == 3, 0.2, 0.0)  # Backdoor
-        )
+    # DRAWS
+    hole_suits = hole_cards % 4
+    suited_hole = hole_suits[0] == hole_suits[1]
+    our_suit_count = jnp.where(
+        suited_hole,
+        all_suit_counts[hole_suits[0]],
+        0
+    )
     
-    return jnp.clip(made_hand_strength + draw_strength, 0.0, 1.0) 
+    # Solo en flop/turn (no river)
+    draw_strength = jnp.where(
+        num_community < 5,
+        jnp.where(
+            our_suit_count == 4, 0.4,
+            jnp.where(our_suit_count == 3, 0.2, 0.0)
+        ),
+        0.0
+    )
+    
+    final_strength = jnp.clip(made_hand_strength + draw_strength, 0.0, 1.0)
+    
+    # Si preflop, retornar neutral
+    return jnp.where(num_community >= 3, final_strength, 0.5) 
