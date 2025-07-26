@@ -522,15 +522,31 @@ def _cfr_step_with_mccfr(
         # DEBUG: Validate info_set_indices
         # jax.debug.print("  info_set_indices shape: {}, dtype: {}", info_set_indices.shape, info_set_indices.dtype)
         # jax.debug.print("  info_set_indices min: {}, max: {}", jnp.min(info_set_indices), jnp.max(info_set_indices))
+        # CFR REAL: Calcular valores específicos por acción
         game_payoffs = payoffs[game_idx].astype(jnp.float32)
-        # CFR requires different payoffs per action
-        # For now, add small random variation to break symmetry
-        random_key = jax.random.fold_in(key, game_idx + 1000)
-        action_noise = jax.random.normal(random_key, (6, config.num_actions)) * 10.0
-        action_values = jnp.broadcast_to(
-            game_payoffs[:, None], 
-            (6, config.num_actions)
-        ).astype(jnp.float32) + action_noise
+
+        # Simular valor de cada acción usando hand strength como proxy
+        def calculate_action_value(player_idx, action_idx):
+            hole_cards = game_results_batch['hole_cards'][game_idx][player_idx]
+            community_cards = game_results_batch['final_community'][game_idx]
+            hand_strength = _evaluate_7card_simple(hole_cards, community_cards)
+            
+            # Valores basados en lógica de poker
+            base_value = game_payoffs[player_idx]
+            if action_idx == 0:  # FOLD
+                return jnp.where(hand_strength < 0.3, base_value + 100, base_value - 200)
+            elif action_idx in [3,4,5,6,7,8]:  # Aggressive actions
+                return jnp.where(hand_strength > 0.7, base_value + 300, base_value - 150)
+            else:  # CHECK/CALL
+                return base_value + jax.random.normal(key, ()) * 50
+
+        # Calcular valores para todas las combinaciones
+        action_values = jnp.zeros((6, config.num_actions))
+        for p in range(6):
+            for a in range(config.num_actions):
+                action_values = action_values.at[p,a].set(calculate_action_value(p, a))
+                
+        action_values = action_values.astype(jnp.float32)
         # jax.debug.print("  action_values shape: {}, dtype: {}", action_values.shape, action_values.dtype)
         return info_set_indices, action_values
     # DEBUG: Before batch processing
