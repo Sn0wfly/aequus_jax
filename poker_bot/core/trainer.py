@@ -611,11 +611,11 @@ def _cfr_step_with_mccfr(
     # MCCFR operations
     from .mccfr_algorithm import mc_sampling_strategy, cfr_iteration
     game_key = jax.random.fold_in(key, iteration)
-    sampling_mask = mc_sampling_strategy(regrets, flat_info_sets, game_key)
+    sampling_mask = mc_sampling_strategy(regrets, flat_info_sets, game_key, config)
     jax.debug.print("  sampling_mask sum: {}", jnp.sum(sampling_mask))
     updated_regrets, updated_strategy = cfr_iteration(
         regrets, strategy, flat_info_sets, flat_action_values, sampling_mask, 
-        iteration, config.learning_rate, config.use_regret_discounting
+        iteration, config.learning_rate, config.use_regret_discounting, config
     )
 
     # --- INICIO DEL BLOQUE A INSERTAR ---

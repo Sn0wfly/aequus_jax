@@ -12,15 +12,7 @@ from jax.tree_util import register_pytree_node_class
 from typing import Tuple, Dict, Any
 import numpy as np
 
-# MC-CFR Configuration
-class MCCFRConfig:
-    sampling_rate = 0.3  # Process 50% of learning opportunities (was 0.15)
-    batch_size = 768      # Process 768 player instances per batch
-    exploration_epsilon = 0.6  # 60% exploration, 40% exploitation
-    regret_floor = 0.0
-    discount_factor = 0.999
-    min_samples_per_info_set = 100
-    max_samples_per_info_set = 10000
+# MC-CFR Configuration - ELIMINADA (usar TrainerConfig en su lugar)
 
 @register_pytree_node_class
 @dataclass
@@ -57,16 +49,19 @@ class MCCFRState:
     def tree_unflatten(cls, _, children):
         return cls(*children)
 
-@jax.jit
+from poker_bot.core.trainer import TrainerConfig
+
+@partial(jax.jit, static_argnames=("config",))
 def mc_sampling_strategy(
     regrets: jnp.ndarray,
     info_set_indices: jnp.ndarray,
-    rng_key: jax.random.PRNGKey
+    rng_key: jax.random.PRNGKey,
+    config: TrainerConfig
 ) -> jnp.ndarray:
     """Sample which info sets to process using Monte Carlo approach."""
     batch_size = info_set_indices.shape[0]
     random_values = jax.random.uniform(rng_key, (batch_size,))
-    return random_values < MCCFRConfig.sampling_rate
+    return random_values < config.mc_sampling_rate
 
 @jax.jit
 def accumulate_regrets_fixed(
@@ -153,12 +148,12 @@ def update_strategy(
     return final_strategy
 
 @jax.jit
-def apply_cfr_plus_discounting(regrets: jnp.ndarray, iteration: int) -> jnp.ndarray:
+def apply_cfr_plus_discounting(regrets: jnp.ndarray, iteration: int, config: TrainerConfig) -> jnp.ndarray:
     """Apply CFR+ regret discounting."""
-    discount = MCCFRConfig.discount_factor ** iteration
-    return jnp.maximum(regrets * discount, MCCFRConfig.regret_floor)
+    discount = config.discount_factor ** iteration
+    return jnp.maximum(regrets * discount, config.regret_floor)
 
-@jax.jit
+@partial(jax.jit, static_argnames=("config",))
 def cfr_iteration(
     regrets: jnp.ndarray,
     strategy: jnp.ndarray,
@@ -167,7 +162,8 @@ def cfr_iteration(
     sampling_mask: jnp.ndarray,
     iteration: int,
     learning_rate: float,
-    use_discounting: bool
+    use_discounting: bool,
+    config: TrainerConfig
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Single CFR iteration with MC sampling."""
     
@@ -176,7 +172,7 @@ def cfr_iteration(
     
     # 2. APLICAR DESCUENTO (LA PARTE CLAVE QUE FALTABA)
     def apply_discount(r):
-        return apply_cfr_plus_discounting(r, iteration)
+        return apply_cfr_plus_discounting(r, iteration, config)
     
     def no_discount(r):
         return r
@@ -266,11 +262,11 @@ class MCCFRTrainer:
         self.strategy = jnp.ones((num_info_sets, num_actions)) / num_actions
         self.iteration = 0
     
-    def update(self, info_set_indices: jnp.ndarray, action_values: jnp.ndarray, rng_key: jax.random.PRNGKey):
+    def update(self, info_set_indices: jnp.ndarray, action_values: jnp.ndarray, rng_key: jax.random.PRNGKey, config: TrainerConfig):
         """Update MC-CFR state."""
-        sampling_mask = mc_sampling_strategy(self.regrets, info_set_indices, rng_key)
+        sampling_mask = mc_sampling_strategy(self.regrets, info_set_indices, rng_key, config)
         self.regrets, self.strategy = cfr_iteration(
-            self.regrets, self.strategy, info_set_indices, action_values, sampling_mask, self.iteration
+            self.regrets, self.strategy, info_set_indices, action_values, sampling_mask, self.iteration, config.learning_rate, config.use_cfr_plus, config
         )
         self.iteration += 1
     
