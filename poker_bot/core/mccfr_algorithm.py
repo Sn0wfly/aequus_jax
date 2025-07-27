@@ -49,7 +49,7 @@ class MCCFRState:
     def tree_unflatten(cls, _, children):
         return cls(*children)
 
-from poker_bot.core.trainer import TrainerConfig
+from .config import TrainerConfig
 
 @partial(jax.jit, static_argnames=("config",))
 def mc_sampling_strategy(

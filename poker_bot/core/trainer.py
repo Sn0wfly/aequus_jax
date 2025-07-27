@@ -13,7 +13,6 @@ import logging
 import pickle
 import os
 import time
-from dataclasses import dataclass
 from typing import Dict, Any, Optional, List
 from functools import partial
 
@@ -21,6 +20,7 @@ from . import full_game_engine as game_engine
 from .bucketing import compute_info_set_id, validate_bucketing_system
 from .mccfr_algorithm import MCCFRTrainer, mc_sampling_strategy, accumulate_regrets_fixed, calculate_strategy_optimized
 from .starting_hands import classify_starting_hand, classify_starting_hand_with_position
+from .config import TrainerConfig
 
 # CFR Counterfactual Simulation Functions
 def copy_game_state(game_state):
@@ -69,64 +69,7 @@ def simulate_game_to_completion(simulated_state, player_idx):
 
 logger = logging.getLogger(__name__)
 
-@dataclass(frozen=True)
-class TrainerConfig:
-    """Enhanced configuration for CFR training with hybrid CFR+ support"""
-    # Core training parameters
-    batch_size: int = 128
-    num_actions: int = 9  # FOLD, CHECK, CALL, BET_SMALL, BET_MED, BET_LARGE, RAISE_SMALL, RAISE_MED, ALL_IN
-    max_info_sets: int = 1_000_000  # Increased from 50,000 to handle large indices
-    learning_rate: float = 0.1  # Increased from 0.01 to create larger regret updates
-    
-    # CFR parameters
-    regret_floor: float = -100.0  # Legacy parameter - will be overridden when CFR+ is enabled
-    regret_ceiling: float = 100.0
-    strategy_threshold: float = 1e-15  # Further reduced to handle very small regrets from large tables
-    
-    # Hybrid CFR+ parameters
-    discount_factor: float = 0.9995  # Regret discounting factor (CFR-γ)
-    use_cfr_plus: bool = False        # Enable CFR+ pruning
-    use_regret_discounting: bool = True  # Enable regret discounting
-    
-    # MC-CFR parameters
-    mc_sampling_rate: float = 0.50  # Process 50% of learning opportunities (was 0.15)
-    mc_exploration_epsilon: float = 0.6  # 60% exploration, 40% exploitation
-    mc_min_samples_per_info_set: int = 100
-    mc_max_samples_per_info_set: int = 10000
-    
-    # Training control
-    save_interval: int = 1000
-    log_interval: int = 100
-    
-    @classmethod
-    def from_yaml(cls, yaml_path: str) -> 'TrainerConfig':
-        """Load configuration from YAML file with hybrid CFR+ support"""
-        import yaml
-        with open(yaml_path, 'r') as f:
-            config_dict = yaml.safe_load(f) or {}
-        
-        # Create default instance to get fallback values
-        default_config = cls()
-        
-        # Extract all parameters from YAML with proper fallbacks to class defaults
-        return cls(
-            batch_size=config_dict.get('batch_size', default_config.batch_size),
-            num_actions=config_dict.get('num_actions', default_config.num_actions),
-            max_info_sets=config_dict.get('max_info_sets', default_config.max_info_sets),
-            learning_rate=config_dict.get('learning_rate', default_config.learning_rate),
-            regret_floor=config_dict.get('regret_floor', default_config.regret_floor),
-            regret_ceiling=config_dict.get('regret_ceiling', default_config.regret_ceiling),
-            strategy_threshold=config_dict.get('strategy_threshold', default_config.strategy_threshold),
-            save_interval=config_dict.get('save_interval', default_config.save_interval),
-            log_interval=config_dict.get('log_interval', default_config.log_interval),
-            discount_factor=config_dict.get('discount_factor', default_config.discount_factor),
-            use_cfr_plus=config_dict.get('use_cfr_plus', default_config.use_cfr_plus),
-            use_regret_discounting=config_dict.get('use_regret_discounting', default_config.use_regret_discounting),
-            mc_sampling_rate=config_dict.get('mc_sampling_rate', default_config.mc_sampling_rate),
-            mc_exploration_epsilon=config_dict.get('mc_exploration_epsilon', default_config.mc_exploration_epsilon),
-            mc_min_samples_per_info_set=config_dict.get('mc_min_samples_per_info_set', default_config.mc_min_samples_per_info_set),
-            mc_max_samples_per_info_set=config_dict.get('mc_max_samples_per_info_set', default_config.mc_max_samples_per_info_set),
-        )
+
 
 # ==============================================================================
 # FUNCIONES PURAS COMPILADAS CON JIT (FUERA DE LA CLASE)!
