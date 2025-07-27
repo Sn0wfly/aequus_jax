@@ -6,7 +6,7 @@ from typing import Tuple
 def analyze_board_texture(community_cards: jnp.ndarray) -> jnp.ndarray:
     """
     Analiza textura del board: wet (draws) vs dry (estático).
-    VERSIÓN CORREGIDA - sin código duplicado ni wheel detection incorrecta.
+    VERSIÓN CORREGIDA - sin código duplicado ni wheel detection incorrecta..
     """
     num_cards = jnp.sum(community_cards >= 0)
     max_cards = jnp.minimum(num_cards, 5)
