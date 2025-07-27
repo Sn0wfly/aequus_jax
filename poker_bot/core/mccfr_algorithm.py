@@ -147,10 +147,11 @@ def update_strategy(
     
     return final_strategy
 
-@jax.jit
+@partial(jax.jit, static_argnames=['config'])
 def apply_cfr_plus_discounting(regrets: jnp.ndarray, iteration: int, config: TrainerConfig) -> jnp.ndarray:
     """Apply CFR+ regret discounting."""
     discount = config.discount_factor ** iteration
+    # Usa config.regret_floor en lugar del MCCFRConfig hardcodeado
     return jnp.maximum(regrets * discount, config.regret_floor)
 
 @partial(jax.jit, static_argnames=("config",))
@@ -240,7 +241,9 @@ def test_mc_sampling():
     """Test MC sampling functionality."""
     key = jax.random.PRNGKey(0)
     info_set_indices = jnp.arange(1000)
-    sampling_mask = mc_sampling_strategy(jnp.zeros(1000), info_set_indices, key)
+    # Create a default config for testing
+    config = TrainerConfig()
+    sampling_mask = mc_sampling_strategy(jnp.zeros(1000), info_set_indices, key, config)
     return jnp.sum(sampling_mask) / 1000.0
 
 @jax.jit
