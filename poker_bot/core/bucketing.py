@@ -14,6 +14,7 @@ import logging
 
 # Import for position-aware hand evaluation
 from .starting_hands import classify_starting_hand_with_position
+from .board_analysis import analyze_board_texture
 
 logger = logging.getLogger(__name__)
 
@@ -33,40 +34,47 @@ def compute_info_set_id(hole_cards: jnp.ndarray, community_cards: jnp.ndarray,
                        stack_size: jnp.ndarray = None, action_history: jnp.ndarray = None,
                        max_info_sets: int = 100000) -> jnp.ndarray:
     """
-    Incluye position en el cálculo del info set.
+    Cálculo de Info Set mejorado que incluye textura del board y tamaño del pozo
+    para evitar colisiones y permitir estrategias más complejas como los faroles.
     """
-    # Hand strength con position awareness
     num_community = jnp.sum(community_cards >= 0)
     
+    # 1. Fuerza de la mano (como antes, pero ahora es solo un componente más)
     hand_strength = jnp.where(
         num_community == 0,  # Preflop
         classify_starting_hand_with_position(hole_cards, player_idx),
-        # Post-flop (usar evaluación existente)
+        # Post-flop
         _evaluate_postflop_hand(hole_cards, community_cards)
     )
     
-    # Incluir position en hash
-    position_component = player_idx * 1000
-    
-    # Calcular componentes adicionales
-    street_component = _compute_street_bucket(community_cards) * 100
-    
-    # Pot component (simplificado)
+    # 2. Textura del Board (¡NUEVO Y CRÍTICO!)
+    # Esto diferencia una mesa seca de una con muchos proyectos (draws).
+    # Un valor alto (cercano a 1.0) significa un board "húmedo" (wet), ideal para faroles.
+    board_texture = analyze_board_texture(community_cards)
+
+    # 3. Componente de Posición (como antes)
+    position_component = jnp.int32(player_idx)
+
+    # 4. Componente del Pozo (como antes)
     pot_component = jnp.where(
         pot_size is not None,
-        jnp.clip(jnp.int32(pot_size[0] / 10), 0, 99),  # Bucket pot size
+        jnp.clip(jnp.int32(pot_size[0] / 10.0), 0, 99),
         jnp.int32(0)
     )
     
-    # Combinar todos los componentes
+    # 5. Combinar todos los componentes en un hash más robusto
+    # Usamos multiplicadores primos para minimizar colisiones
     combined_hash = (
-        jnp.int32(hand_strength * 1000) +
-        position_component +
-        pot_component +
-        street_component
-    ) % max_info_sets
+        jnp.int32(hand_strength * 1000) * 1 +
+        jnp.int32(board_texture * 100)  * 31 +
+        position_component * 67 +
+        pot_component * 101
+    )
     
-    return jnp.clip(combined_hash, 0, max_info_sets - 1).astype(jnp.int32)
+    # El ID final es el hash módulo el tamaño de la tabla
+    final_id = combined_hash % max_info_sets
+    
+    return jnp.clip(final_id, 0, max_info_sets - 1).astype(jnp.int32)
 
 @jax.jit
 def _compute_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:

@@ -1,95 +1,65 @@
 import jax
 import jax.numpy as jnp
-from typing import Tuple
+from jax import lax
 
 @jax.jit
 def analyze_board_texture(community_cards: jnp.ndarray) -> jnp.ndarray:
     """
-    Analiza textura del board: wet (draws) vs dry (estático).
-    VERSIÓN CORREGIDA - sin código duplicado ni wheel detection incorrecta..
+    Analiza la textura del board: "wet" (con proyectos) vs "dry" (estático).
+    Retorna un valor entre 0.0 (muy dry) y 1.0 (muy wet).
     """
-    num_cards = jnp.sum(community_cards >= 0)
-    max_cards = jnp.minimum(num_cards, 5)
+    num_cards = jnp.sum(community_cards >= 0).astype(jnp.int32)
     
-    # FLUSH DRAWS
-    suit_counts = jnp.zeros(4, dtype=jnp.int32)
-    rank_counts = jnp.zeros(13, dtype=jnp.int32)
+    # Si es preflop o no hay suficientes cartas en el flop, la textura es neutral.
+    is_insufficient = num_cards < 3
     
-    for i in range(5):
-        valid_card = jnp.where(i < max_cards, community_cards[i], -1)
-        suit = jnp.where(valid_card >= 0, valid_card % 4, 0)
-        rank = jnp.where(valid_card >= 0, valid_card // 4, 0)
+    def calculate_texture():
+        # Tomar solo las cartas válidas del board
+        valid_cards = community_cards
         
-        suit_counts = jnp.where(
-            valid_card >= 0,
-            suit_counts.at[suit].add(1),
-            suit_counts
-        )
-        rank_counts = jnp.where(
-            valid_card >= 0,
-            rank_counts.at[rank].add(1),
-            rank_counts
-        )
-    
-    # Flush draw strength
-    max_suit_count = jnp.max(suit_counts)
-    flush_draw_strength = jnp.where(
-        max_suit_count >= 3, 0.4,
-        jnp.where(max_suit_count == 2, 0.2, 0.0)
-    )
-    
-    # STRAIGHT DRAWS - versión estricta
-    straight_potential = 0.0
-    
-    # Solo considerar straight si hay 3+ cartas conectadas
-    for start_rank in range(11):  # 0-10
-        connected_sequence = 0
-        for offset in range(3):
-            if start_rank + offset < 13:
-                has_card = rank_counts[start_rank + offset] > 0
-                connected_sequence += jnp.where(has_card, 1, 0)
+        # --- Conteo de proyectos de color (Flush Draws) ---
+        suit_counts = jnp.zeros(4, dtype=jnp.int32)
+        for i in range(5):
+             card_is_valid = valid_cards[i] >= 0
+             suit = valid_cards[i] % 4
+             suit_counts = suit_counts.at[suit].add(jnp.where(card_is_valid, 1, 0))
         
-        # STRICT: Solo dar potential si hay 3 cartas conectadas
-        has_real_potential = connected_sequence >= 3
-        straight_potential = jnp.maximum(
-            straight_potential,
-            jnp.where(has_real_potential, 0.3, 0.0)
-        )
-    
-    # PAIRED BOARDS
-    max_rank_count = jnp.max(rank_counts)
-    pairs_count = jnp.sum(rank_counts >= 2)
-    
-    pair_texture = jnp.where(
-        max_rank_count >= 3, 0.6,
-        jnp.where(pairs_count >= 2, 0.4,
-                  jnp.where(max_rank_count == 2, 0.2, 0.0))
+        max_suit_count = jnp.max(suit_counts)
+        flush_draw_strength = jnp.where(max_suit_count >= 3, 0.5, jnp.where(max_suit_count == 2, 0.2, 0.0))
+
+        # --- Conteo de proyectos de escalera (Straight Draws) ---
+        ranks = jnp.where(valid_cards >= 0, valid_cards // 4, -1)
+        unique_ranks = jnp.unique(ranks, size=5, fill_value=-1)
+        sorted_ranks = jnp.sort(unique_ranks)
+        
+        # Eliminar valores de relleno para un cálculo de gaps correcto
+        valid_sorted_ranks = jnp.where(sorted_ranks >= 0, sorted_ranks, jnp.nan)
+        gaps = jnp.diff(valid_sorted_ranks)
+        
+        # Contar cuántas cartas están a 1 o 2 de distancia (conectividad)
+        connectivity = jnp.sum(jnp.where((gaps > 0) & (gaps < 4), 1, 0))
+        straight_draw_strength = jnp.clip(connectivity / 4.0, 0.0, 0.5)
+
+        # --- Conteo de cartas altas y si el board está pareado ---
+        rank_counts = jnp.zeros(13, dtype=jnp.int32)
+        for i in range(5):
+            card_is_valid = valid_cards[i] >= 0
+            rank = valid_cards[i] // 4
+            rank_counts = rank_counts.at[rank].add(jnp.where(card_is_valid, 1, 0))
+
+        is_paired = jnp.any(rank_counts > 1)
+        high_card_factor = jnp.sum(rank_counts[9:]) / 5.0 # T, J, Q, K, A
+        
+        # Combinar todos los factores para obtener la "humedad" total del board
+        total_wetness = flush_draw_strength + straight_draw_strength + (0.2 * is_paired) + (0.1 * high_card_factor)
+        return jnp.clip(total_wetness, 0.0, 1.0)
+
+    # Usa lax.cond para ser compatible con la compilación JIT
+    return lax.cond(
+        is_insufficient,
+        lambda: 0.5,  # Valor neutral si no hay suficientes cartas
+        calculate_texture
     )
-    
-    # HIGH CARDS
-    high_cards = jnp.sum(rank_counts[9:13])
-    high_card_factor = jnp.where(
-        num_cards > 0,
-        (high_cards / num_cards) * 0.2,
-        0.0
-    )
-    
-    # COMBINAR
-    total_wetness = (
-        flush_draw_strength + 
-        straight_potential + 
-        pair_texture + 
-        high_card_factor
-    )
-    
-    # Return final result
-    final_wetness = jnp.where(
-        num_cards >= 3,
-        jnp.clip(total_wetness, 0.0, 1.0),
-        0.5
-    )
-    
-    return final_wetness
 
 @jax.jit
 def get_street_multiplier(num_community_cards: int) -> float:
