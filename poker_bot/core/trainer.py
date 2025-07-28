@@ -516,29 +516,29 @@ def _cfr_step_with_mccfr(
             
             # Para cada acción, calcular su valor usando heurística inteligente
             for a in range(config.num_actions):
-                # Mapear acciones a niveles de agresividad diferenciados
+                # Mapear acciones a niveles de agresividad EXTREMOS para forzar entropía baja
                 action_aggressiveness = jnp.array([
-                    -1.0,  # FOLD
-                     0.0,  # CHECK  
-                     0.1,  # CALL
-                     0.3,  # BET_SMALL
-                     0.5,  # BET_MED
-                     0.7,  # BET_LARGE
-                     0.9,  # RAISE_SMALL
-                     1.1,  # RAISE_MED
-                     2.0   # ALL_IN
+                    -10.0,  # FOLD (mucho más negativo)
+                     0.0,   # CHECK  
+                     0.5,   # CALL
+                     2.0,   # BET_SMALL
+                     4.0,   # BET_MED
+                     6.0,   # BET_LARGE
+                     8.0,   # RAISE_SMALL
+                    10.0,   # RAISE_MED
+                    20.0    # ALL_IN (extremadamente positivo)
                 ])[a]
                 
                 # Con manos fuertes: agresividad = bueno
                 # Con manos débiles: agresividad = malo
                 strength_modifier = jnp.where(hand_strength > 0.5, 1.0, -1.0)
                 
-                # Calcular valor de la acción - hacer diferencias más dramáticas
-                action_value = base_payoff + (action_aggressiveness * strength_modifier * pot_size * 1.0)
+                # Calcular valor de la acción - hacer diferencias EXTREMAS para forzar entropía baja
+                action_value = base_payoff + (action_aggressiveness * strength_modifier * pot_size * 50.0)
                 action_values = action_values.at[p, a].set(action_value)
                 
-        # Escalar action_values para evitar clipping - aumentar scaling para diferencias más dramáticas
-        action_values = action_values.astype(jnp.float32) * 0.1
+        # Escalar action_values para evitar clipping - scaling EXTREMO para forzar entropía baja
+        action_values = action_values.astype(jnp.float32) * 1.0
         # jax.debug.print("  action_values shape: {}, dtype: {}", action_values.shape, action_values.dtype)
         return info_set_indices, action_values
     # DEBUG: Before batch processing
