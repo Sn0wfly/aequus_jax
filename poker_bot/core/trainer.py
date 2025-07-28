@@ -533,12 +533,12 @@ def _cfr_step_with_mccfr(
                 # Con manos débiles: agresividad = malo
                 strength_modifier = jnp.where(hand_strength > 0.5, 1.0, -1.0)
                 
-                # Calcular valor de la acción
-                action_value = base_payoff + (action_aggressiveness * strength_modifier * pot_size * 0.1)
+                # Calcular valor de la acción - hacer diferencias más dramáticas
+                action_value = base_payoff + (action_aggressiveness * strength_modifier * pot_size * 1.0)
                 action_values = action_values.at[p, a].set(action_value)
                 
-        # Escalar action_values para evitar clipping
-        action_values = action_values.astype(jnp.float32) * 0.01
+        # Escalar action_values para evitar clipping - aumentar scaling para diferencias más dramáticas
+        action_values = action_values.astype(jnp.float32) * 0.1
         # jax.debug.print("  action_values shape: {}, dtype: {}", action_values.shape, action_values.dtype)
         return info_set_indices, action_values
     # DEBUG: Before batch processing
