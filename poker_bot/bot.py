@@ -206,7 +206,10 @@ class PokerBot:
                 
                 # Asegurar arrays mismo tamaño
                 actions = actions[:len(strategy_probs)]
-                selected_action = np.random.choice(actions, p=strategy_probs)
+                # INVERTIR: tomar la acción con MENOR probabilidad (regrets más bajos)
+                inverted_probs = 1.0 - strategy_probs
+                inverted_probs = inverted_probs / np.sum(inverted_probs)
+                selected_action = np.random.choice(actions, p=inverted_probs)
                 
                 logger.debug(f"Info set {info_set_idx}: Strategy={np.round(strategy_probs, 2)} -> Sampled Action: {selected_action}")
                 return selected_action
