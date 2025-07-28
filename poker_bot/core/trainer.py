@@ -484,7 +484,7 @@ def _cfr_step_with_mccfr(
     def process_single_game(game_idx):
         hole_cards_batch = game_results_batch['hole_cards'][game_idx]
         community_cards = game_results_batch['final_community'][game_idx]
-        pot_size = game_results_batch['final_pot'][game_idx]
+        pot_size = jnp.squeeze(game_results_batch['final_pot'][game_idx])
         # DEBUG: Validate inputs to compute_info_set_id
         # jax.debug.print("🎯 process_single_game {}", game_idx)
         # jax.debug.print("  hole_cards_batch shape: {}", hole_cards_batch.shape)
