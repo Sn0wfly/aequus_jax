@@ -298,14 +298,15 @@ class PokerTrainer:
             self.mccfr_trainer.iteration = self.iteration
             self.iteration += 1
             regret_magnitude = jnp.sum(jnp.abs(self.regrets))
-            strategy_entropy = self._compute_strategy_entropy()
+            entropy_details = self._compute_strategy_entropy_detailed()
+            strategy_entropy = entropy_details['overall_entropy']
             iter_time = time.time() - iter_start
             stats['iterations'].append(self.iteration)
             stats['regret_magnitudes'].append(float(regret_magnitude))
             stats['strategy_entropies'].append(strategy_entropy)
             stats['training_times'].append(iter_time)
             if i % self.config.log_interval == 0:
-                logger.info(f"📊 MCCFR Iteration {i}: regret={regret_magnitude:.4f}, entropy={strategy_entropy:.4f}, time={iter_time:.3f}s")
+                logger.info(f"📊 MCCFR Iteration {i}: regret={regret_magnitude:.4f}, entropy={strategy_entropy:.4f}, trained_sets={entropy_details['trained_info_sets']}, time={iter_time:.3f}s")
             if i > 0 and i % self.config.save_interval == 0:
                 checkpoint_path = f"{save_path}_iter_{i}.pkl"
                 self.save_model(checkpoint_path)
@@ -325,6 +326,25 @@ class PokerTrainer:
         log_probs = jnp.log(jnp.clip(self.strategy, 1e-10, 1.0))
         entropies = -jnp.sum(self.strategy * log_probs, axis=1)
         return float(jnp.mean(entropies))
+
+    def _compute_strategy_entropy_detailed(self) -> Dict[str, float]:
+        """Compute detailed entropy statistics for debugging."""
+        # Entropy for each info set
+        log_probs = jnp.log(jnp.clip(self.strategy, 1e-10, 1.0))
+        entropies = -jnp.sum(self.strategy * log_probs, axis=1)
+        
+        # Find which info sets have non-uniform strategies (been trained)
+        uniform_entropy = jnp.log(self.config.num_actions)  # ln(9) ≈ 2.197
+        is_trained = jnp.abs(entropies - uniform_entropy) > 0.01  # Threshold for "different from uniform"
+        
+        return {
+            'overall_entropy': float(jnp.mean(entropies)),
+            'trained_info_sets': int(jnp.sum(is_trained)),
+            'total_info_sets': int(self.config.max_info_sets),
+            'trained_percentage': float(jnp.sum(is_trained) / self.config.max_info_sets * 100),
+            'trained_entropy_avg': float(jnp.mean(jnp.where(is_trained, entropies, jnp.nan), axis=0, where=~jnp.isnan(entropies))),
+            'uniform_entropy': float(uniform_entropy)
+        }
 
     def save_model(self, path: str):
         """Save MCCFR model state."""
