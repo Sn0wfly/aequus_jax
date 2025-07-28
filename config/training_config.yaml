@@ -8,7 +8,7 @@
 # CFR Training Settings
 num_iterations: 1000000              # Total CFR iterations.
 batch_size: 4096            #Games per training batch (reduced for memory)
-learning_rate: 0.005                # CFR learning rate
+learning_rate: 0.01                # CFR learning rate
 max_info_sets: 1500000            # Maximum info sets (increased from 50,000)
 save_interval: 500000               # Save checkpoint every N iterations
 log_interval: 1000                  # Log progress every N iterations
@@ -20,7 +20,7 @@ regret_ceiling: 100.0              # Maximum regret value
 strategy_threshold: 0.000001       # Minimum strategy probability
 
 # Hybrid CFR+ Settings
-use_cfr_plus: true                 # Activa/desactiva la poda de regrets de CFR+
+use_cfr_plus: false                 # Activa/desactiva la poda de regrets de CFR+
 use_regret_discounting: false       # Activa/desactiva el descuento de regrets
 discount_factor: 0.95            # Factor de descuento para los regrets (CFR-γ)
 
