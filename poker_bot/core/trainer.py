@@ -553,8 +553,8 @@ def _cfr_step_with_mccfr(
                 # Con manos débiles: agresividad = malo
                 strength_modifier = jnp.where(hand_strength > 0.5, 1.0, -1.0)
                 
-                # Calcular valor de la acción - hacer diferencias EXTREMAS para forzar entropía baja
-                action_value = base_payoff + (action_aggressiveness * strength_modifier * pot_size * 50.0)
+                # INVERTIR completamente - los valores altos deben ir a las acciones BUENAS
+                action_value = base_payoff - (action_aggressiveness * strength_modifier * pot_size * 50.0)
                 action_values = action_values.at[p, a].set(action_value)
                 
         # Escalar action_values para evitar clipping - scaling EXTREMO para forzar entropía baja
