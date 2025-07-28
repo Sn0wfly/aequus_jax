@@ -523,45 +523,51 @@ def _cfr_step_with_mccfr(
         # CFR REAL: Calcular valores específicos por acción
         game_payoffs = payoffs[game_idx].astype(jnp.float32)
 
-        # --- INICIO DEL BLOQUE CORREGIDO ---
-        # Calcular action values con una heurística clara y directa
-        action_values = jnp.zeros((6, config.num_actions), dtype=jnp.float32)
-
-        # Para cada jugador, calcular el valor de cada una de las 9 acciones
-        def calculate_player_action_values(p):
-            hole_cards = hole_cards_batch[p]
+        # --- INICIO DEL BLOQUE FINAL Y TEÓRICAMENTE CORRECTO ---
+        # Calculamos los "action values" como una estimación del valor contrafactual de cada acción.
+        # Esta es la señal de aprendizaje principal para el algoritmo CFR.
+        
+        # 'game_payoffs' NO se usa directamente para los regrets de acción, ya que es el resultado de
+        # una única trayectoria aleatoria y añadiría demasiado ruido. Lo usaremos más adelante si es necesario.
+        
+        def calculate_action_values_for_player(p_idx):
+            hole = hole_cards_batch[p_idx]
             
-            # Evaluar fuerza de mano real
-            hand_strength = _evaluate_7card_simple(hole_cards, community_cards, p)
+            # 1. Evaluar la fuerza real de la mano (nuestra mejor estimación de la probabilidad de ganar).
+            # Un valor cercano a 1.0 es una mano monstruosa; cercano a 0.0 es basura.
+            hand_strength = _evaluate_7card_simple(hole, community_cards, p_idx)
 
-            # Definir un "valor intrínseco" para cada acción basado en su agresividad
+            # 2. Definir el coste/recompensa intrínseco de cada acción en términos de agresividad.
+            # Estos valores son relativos y representan el control que cada acción ejerce sobre el pozo.
             action_aggressiveness = jnp.array([
-                -2.0,  # FOLD (acción pasiva, valor negativo)
-                -0.5,  # CHECK (acción pasiva, valor ligeramente negativo)
-                 0.0,  # CALL (acción neutral)
+                -1.0,  # FOLD: Pierdes la oportunidad de ganar el pozo. Coste base.
+                 0.0,  # CHECK: Neutral, no inviertes nada, no ganas nada extra.
+                 0.5,  # CALL: Inviertes para ver la siguiente carta, valor ligeramente positivo.
                  1.0,  # BET_SMALL
                  1.5,  # BET_MED
                  2.0,  # BET_LARGE
                  2.5,  # RAISE_SMALL
                  3.0,  # RAISE_MED
-                 4.0   # ALL_IN (acción más agresiva, valor más alto)
+                 4.0   # ALL_IN: Máxima agresividad, máximo potencial de recompensa.
             ], dtype=jnp.float32)
-            
-            # El valor de una acción depende directamente de la fuerza de la mano.
-            # Manos fuertes (>0.5): valor positivo para acciones agresivas.
-            # Manos débiles (<0.5): valor negativo para acciones agresivas (lo que favorece FOLD/CHECK).
-            strength_modifier = jnp.where(hand_strength > 0.5, 1.0, -1.0)
-            
-            # El valor final es la agresividad de la acción, modificada por la fuerza de la mano.
-            # No lo mezclamos con el payoff del juego, para darle una señal de aprendizaje limpia.
-            # Se escala por el tamaño del pozo para que las decisiones importen más en pozos grandes.
-            final_action_values = action_aggressiveness * strength_modifier * pot_size
-            
-            return final_action_values
 
-        # Usar vmap para aplicar la lógica a todos los jugadores de forma eficiente
-        action_values = jax.vmap(calculate_player_action_values)(jnp.arange(6))
-        # --- FIN DEL BLOQUE CORREGIDO ---
+            # 3. Calcular el valor final. La idea central es:
+            # "El valor de una acción agresiva se multiplica por la probabilidad de que tengas la mejor mano".
+            # Con una mano fuerte (strength=0.9), el valor de ALL_IN (4.0) es muy alto.
+            # Con una mano débil (strength=0.1), el valor de ALL_IN es muy bajo, haciendo que FOLD (-1.0) sea preferible.
+            
+            # Usamos (hand_strength - 0.5) * 2 para mapear la fuerza de [0, 1] a [-1, 1].
+            # Una mano con 50% de equity tiene un modificador de 0 (neutral).
+            strength_modifier = (hand_strength - 0.5) * 2.0
+            
+            # El valor de cada acción es su agresividad, escalada por la fuerza de la mano y el tamaño del pozo.
+            values = action_aggressiveness * strength_modifier * pot_size
+            
+            return values
+
+        # Usamos vmap para aplicar esta lógica a los 6 jugadores de forma eficiente.
+        action_values = jax.vmap(calculate_action_values_for_player)(jnp.arange(6))
+        # --- FIN DEL BLOQUE FINAL Y TEÓRICAMENTE CORRECTO ---
         # jax.debug.print("  action_values shape: {}, dtype: {}", action_values.shape, action_values.dtype)
         return info_set_indices, action_values
     # DEBUG: Before batch processing
