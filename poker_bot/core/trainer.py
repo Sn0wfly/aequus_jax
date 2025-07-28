@@ -523,42 +523,45 @@ def _cfr_step_with_mccfr(
         # CFR REAL: Calcular valores específicos por acción
         game_payoffs = payoffs[game_idx].astype(jnp.float32)
 
-        # Calcular action values usando heurística mejorada que diferencia las 9 acciones
-        action_values = jnp.zeros((6, config.num_actions))
+        # --- INICIO DEL BLOQUE CORREGIDO ---
+        # Calcular action values con una heurística clara y directa
+        action_values = jnp.zeros((6, config.num_actions), dtype=jnp.float32)
 
         # Para cada jugador, calcular el valor de cada una de las 9 acciones
-        for p in range(6):
+        def calculate_player_action_values(p):
             hole_cards = hole_cards_batch[p]
-            base_payoff = game_payoffs[p]
             
             # Evaluar fuerza de mano real
             hand_strength = _evaluate_7card_simple(hole_cards, community_cards, p)
+
+            # Definir un "valor intrínseco" para cada acción basado en su agresividad
+            action_aggressiveness = jnp.array([
+                -2.0,  # FOLD (acción pasiva, valor negativo)
+                -0.5,  # CHECK (acción pasiva, valor ligeramente negativo)
+                 0.0,  # CALL (acción neutral)
+                 1.0,  # BET_SMALL
+                 1.5,  # BET_MED
+                 2.0,  # BET_LARGE
+                 2.5,  # RAISE_SMALL
+                 3.0,  # RAISE_MED
+                 4.0   # ALL_IN (acción más agresiva, valor más alto)
+            ], dtype=jnp.float32)
             
-            # Para cada acción, calcular su valor usando heurística inteligente
-            for a in range(config.num_actions):
-                # Mapear acciones a niveles de agresividad EXTREMOS para forzar entropía baja
-                action_aggressiveness = jnp.array([
-                    -10.0,  # FOLD (mucho más negativo)
-                     0.0,   # CHECK  
-                     0.5,   # CALL
-                     2.0,   # BET_SMALL
-                     4.0,   # BET_MED
-                     6.0,   # BET_LARGE
-                     8.0,   # RAISE_SMALL
-                    10.0,   # RAISE_MED
-                    20.0    # ALL_IN (extremadamente positivo)
-                ])[a]
-                
-                # Con manos fuertes: agresividad = bueno
-                # Con manos débiles: agresividad = malo
-                strength_modifier = jnp.where(hand_strength > 0.5, 1.0, -1.0)
-                
-                # Calcular valor de la acción - hacer diferencias EXTREMAS para forzar entropía baja
-                action_value = base_payoff + (action_aggressiveness * strength_modifier * pot_size * 50.0)
-                action_values = action_values.at[p, a].set(action_value)
-                
-        # Escalar action_values para evitar clipping - scaling EXTREMO para forzar entropía baja
-        action_values = action_values.astype(jnp.float32) * 1.0
+            # El valor de una acción depende directamente de la fuerza de la mano.
+            # Manos fuertes (>0.5): valor positivo para acciones agresivas.
+            # Manos débiles (<0.5): valor negativo para acciones agresivas (lo que favorece FOLD/CHECK).
+            strength_modifier = jnp.where(hand_strength > 0.5, 1.0, -1.0)
+            
+            # El valor final es la agresividad de la acción, modificada por la fuerza de la mano.
+            # No lo mezclamos con el payoff del juego, para darle una señal de aprendizaje limpia.
+            # Se escala por el tamaño del pozo para que las decisiones importen más en pozos grandes.
+            final_action_values = action_aggressiveness * strength_modifier * pot_size
+            
+            return final_action_values
+
+        # Usar vmap para aplicar la lógica a todos los jugadores de forma eficiente
+        action_values = jax.vmap(calculate_player_action_values)(jnp.arange(6))
+        # --- FIN DEL BLOQUE CORREGIDO ---
         # jax.debug.print("  action_values shape: {}, dtype: {}", action_values.shape, action_values.dtype)
         return info_set_indices, action_values
     # DEBUG: Before batch processing
