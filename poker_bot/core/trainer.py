@@ -23,49 +23,50 @@ from .starting_hands import classify_starting_hand, classify_starting_hand_with_
 from .config import TrainerConfig
 
 # CFR Counterfactual Simulation Functions
-def copy_game_state(game_state):
-    """Create a deep copy of the game state for simulation."""
-    return {
-        'hole_cards': game_state['hole_cards'].copy(),
-        'community_cards': game_state['community_cards'].copy(),
-        'pot_size': game_state['pot_size'].copy(),
-        'payoffs': game_state['payoffs'].copy()
-    }
+# Remove the broken helper functions
+# def copy_game_state(game_state):
+#     """Create a deep copy of the game state for simulation."""
+#     return {
+#         'hole_cards': game_state['hole_cards'].copy(),
+#         'community_cards': game_state['community_cards'].copy(),
+#         'pot_size': game_state['pot_size'].copy(),
+#         'payoffs': game_state['payoffs'].copy()
+#     }
 
-def apply_action_to_state(simulated_state, player_idx, action_idx):
-    """Apply action with hand-strength awareness."""
-    base_payoff = simulated_state['payoffs'][player_idx]
+# def apply_action_to_state(simulated_state, player_idx, action_idx):
+#     """Apply action with hand-strength awareness."""
+#     base_payoff = simulated_state['payoffs'][player_idx]
     
-    # Evaluar fuerza de mano del jugador
-    hole_cards = simulated_state['hole_cards'][player_idx]
-    community_cards = simulated_state['community_cards']
-    # Usar player_idx como posición (0-5 para 6-max)
-    hand_strength = _evaluate_7card_simple(hole_cards, community_cards, player_idx)
+#     # Evaluar fuerza de mano del jugador
+#     hole_cards = simulated_state['hole_cards'][player_idx]
+#     community_cards = simulated_state['community_cards']
+#     # Usar player_idx como posición (0-5 para 6-max)
+#     hand_strength = _evaluate_7card_simple(hole_cards, community_cards, player_idx)
     
-    # Lógica específica por fuerza de mano
-    if action_idx == 0:  # FOLD
-        # FOLD es bueno con manos débiles, malo con manos fuertes
-        fold_value = jnp.where(hand_strength < 0.3, base_payoff + 1000, base_payoff - 1500)
-        simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(fold_value)
-    elif action_idx in [3,4,5,6,7,8]:  # Aggressive actions  
-        # Agresividad es buena con manos fuertes, mala con manos débiles
-        aggro_value = jnp.where(hand_strength > 0.7, base_payoff + 1500, base_payoff - 1000)
-        simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(aggro_value)
-    else:  # CHECK/CALL
-        # Penalizar check/call con manos muy débiles
-        neutral_value = jnp.where(
-            hand_strength < 0.2, base_payoff - 800,  # Malo con trash
-            base_payoff + jax.random.normal(jax.random.PRNGKey(42), ()) * 25
-        )
-        simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(neutral_value)
+#     # Lógica específica por fuerza de mano
+#     if action_idx == 0:  # FOLD
+#         # FOLD es bueno con manos débiles, malo con manos fuertes
+#         fold_value = jnp.where(hand_strength < 0.3, base_payoff + 1000, base_payoff - 1500)
+#         simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(fold_value)
+#     elif action_idx in [3,4,5,6,7,8]:  # Aggressive actions  
+#         # Agresividad es buena con manos fuertes, mala con manos débiles
+#         aggro_value = jnp.where(hand_strength > 0.7, base_payoff + 1500, base_payoff - 1000)
+#         simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(aggro_value)
+#     else:  # CHECK/CALL
+#         # Penalizar check/call con manos muy débiles
+#         neutral_value = jnp.where(
+#             hand_strength < 0.2, base_payoff - 800,  # Malo con trash
+#             base_payoff + jax.random.normal(jax.random.PRNGKey(42), ()) * 25
+#         )
+#         simulated_state['payoffs'] = simulated_state['payoffs'].at[player_idx].set(neutral_value)
     
-    return simulated_state
+#     return simulated_state
 
-def simulate_game_to_completion(simulated_state, player_idx):
-    """Simulate the game to completion and return the final payoff for the player."""
-    # For now, return the modified payoff from the action
-    # This can be enhanced with full game simulation
-    return simulated_state['payoffs'][player_idx]
+# def simulate_game_to_completion(simulated_state, player_idx):
+#     """Simulate the game to completion and return the final payoff for the player."""
+#     # For now, return the modified payoff from the action
+#     # This can be enhanced with full game simulation
+#     return simulated_state['payoffs'][player_idx]
 
 logger = logging.getLogger(__name__)
 
@@ -502,32 +503,39 @@ def _cfr_step_with_mccfr(
         # CFR REAL: Calcular valores específicos por acción
         game_payoffs = payoffs[game_idx].astype(jnp.float32)
 
-        def calculate_counterfactual_value(player_idx, action_idx, game_state):
-            """Simular qué hubiera pasado si el jugador tomara esta acción específica."""
-            
-            # 1. Crear copia del game state
-            simulated_state = copy_game_state(game_state)
-            
-            # 2. Aplicar la acción específica
-            simulated_state = apply_action_to_state(simulated_state, player_idx, action_idx)
-            
-            # 3. Simular el resto del juego desde ese punto
-            final_payoff = simulate_game_to_completion(simulated_state, player_idx)
-            
-            return final_payoff
-
-        # Calcular valores para todas las combinaciones
+        # Calcular action values usando heurística mejorada que diferencia las 9 acciones
         action_values = jnp.zeros((6, config.num_actions))
-        # Crear game_state para este juego
-        game_state = {
-            'hole_cards': hole_cards_batch,
-            'community_cards': community_cards,
-            'pot_size': pot_size,
-            'payoffs': game_payoffs
-        }
+
+        # Para cada jugador, calcular el valor de cada una de las 9 acciones
         for p in range(6):
+            hole_cards = hole_cards_batch[p]
+            base_payoff = game_payoffs[p]
+            
+            # Evaluar fuerza de mano real
+            hand_strength = _evaluate_7card_simple(hole_cards, community_cards, p)
+            
+            # Para cada acción, calcular su valor usando heurística inteligente
             for a in range(config.num_actions):
-                action_values = action_values.at[p,a].set(calculate_counterfactual_value(p, a, game_state))
+                # Mapear acciones a niveles de agresividad diferenciados
+                action_aggressiveness = jnp.array([
+                    -1.0,  # FOLD
+                     0.0,  # CHECK  
+                     0.1,  # CALL
+                     0.3,  # BET_SMALL
+                     0.5,  # BET_MED
+                     0.7,  # BET_LARGE
+                     0.9,  # RAISE_SMALL
+                     1.1,  # RAISE_MED
+                     2.0   # ALL_IN
+                ])[a]
+                
+                # Con manos fuertes: agresividad = bueno
+                # Con manos débiles: agresividad = malo
+                strength_modifier = jnp.where(hand_strength > 0.5, 1.0, -1.0)
+                
+                # Calcular valor de la acción
+                action_value = base_payoff + (action_aggressiveness * strength_modifier * pot_size * 0.1)
+                action_values = action_values.at[p, a].set(action_value)
                 
         # Escalar action_values para evitar clipping
         action_values = action_values.astype(jnp.float32) * 0.01
