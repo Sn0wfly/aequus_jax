@@ -771,3 +771,32 @@ try:
     load_hand_evaluation_lut()
 except:
     pass  # Continue without LUT for testing
+
+@partial(jax.jit, static_argnames=("lut_keys", "lut_values", "table_size", "num_actions"))
+def play_from_state(initial_state: GameState, lut_keys, lut_values, table_size, num_actions=9):
+    """
+    Juega una partida de póker a partir de un estado inicial dado.
+    Esencial para la exploración forzada.
+    """
+    # La partida continúa desde la calle (street) en la que se encuentra el estado inicial.
+    state = initial_state
+
+    # Simula las calles restantes del juego.
+    # lax.cond asegura que esto sea compatible con JIT.
+    state = lax.cond(state.street[0] <= 0, lambda s: play_street(s, 0, num_actions), lambda s: s, state) # Preflop si es necesario
+    state = lax.cond(state.street[0] <= 1, lambda s: play_street(s, 3, num_actions), lambda s: s, state) # Flop
+    state = lax.cond(state.street[0] <= 2, lambda s: play_street(s, 1, num_actions), lambda s: s, state) # Turn
+    state = lax.cond(state.street[0] <= 3, lambda s: play_street(s, 1, num_actions), lambda s: s, state) # River
+
+    # Resuelve la mano al final.
+    payoffs = resolve_showdown(state, lut_keys, lut_values, table_size)
+    
+    # Devuelve los resultados en el mismo formato que play_one_game.
+    return payoffs, state.action_hist, {
+        'hole_cards': state.hole_cards,
+        'final_community': state.comm_cards,
+        'final_pot': state.pot,
+        'player_stacks': state.stacks,
+        'player_bets': state.bets,
+        'positions': jnp.arange(6)
+    }

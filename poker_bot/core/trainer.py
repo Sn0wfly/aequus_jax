@@ -467,6 +467,83 @@ def create_trainer(config_path: Optional[str] = None) -> PokerTrainer:
     config = TrainerConfig.from_yaml(config_path)
     return PokerTrainer(config)
 
+@jax.jit
+def generate_diverse_game_state(key):
+    """
+    Genera un estado de juego diverso para exploración forzada.
+    Crea escenarios complejos en diferentes calles del juego.
+    """
+    # Decidir aleatoriamente en qué calle empezar (0=preflop, 1=flop, 2=turn, 3=river)
+    street_choice = jax.random.randint(key, (), 0, 4)
+    
+    # Generar un estado base
+    key, subkey = jax.random.split(key)
+    shuffled_deck = jax.random.permutation(subkey, jnp.arange(52))
+    
+    # Configurar hole cards para todos los jugadores
+    hole_cards = shuffled_deck[:12].reshape(6, 2)
+    
+    # Configurar community cards según la calle
+    comm_cards = jnp.full((5,), -1)
+    comm_cards = lax.cond(
+        street_choice >= 1,  # Si es flop o posterior
+        lambda: comm_cards.at[:3].set(shuffled_deck[12:15]),  # 3 cartas del flop
+        lambda: comm_cards
+    )
+    comm_cards = lax.cond(
+        street_choice >= 2,  # Si es turn o posterior
+        lambda: comm_cards.at[3].set(shuffled_deck[15]),  # 1 carta del turn
+        lambda: comm_cards
+    )
+    comm_cards = lax.cond(
+        street_choice >= 3,  # Si es river
+        lambda: comm_cards.at[4].set(shuffled_deck[16]),  # 1 carta del river
+        lambda: comm_cards
+    )
+    
+    # Configurar stacks y bets según la calle
+    base_stacks = jnp.full((6,), 1000.0)
+    base_bets = jnp.zeros((6,))
+    
+    # Añadir complejidad según la calle
+    stacks = lax.cond(
+        street_choice >= 1,  # Post-flop
+        lambda: base_stacks * jax.random.uniform(key, (6,), 0.3, 1.0),  # Stacks variables
+        lambda: base_stacks
+    )
+    
+    bets = lax.cond(
+        street_choice >= 1,  # Post-flop
+        lambda: base_bets.at[0].set(50.0).at[1].set(100.0),  # Bets significativos
+        lambda: base_bets.at[0].set(5.0).at[1].set(10.0)  # Bets preflop
+    )
+    
+    # Configurar pot según la calle
+    pot_size = lax.cond(
+        street_choice >= 1,  # Post-flop
+        lambda: jnp.array([200.0]),  # Pot grande
+        lambda: jnp.array([15.0])  # Pot preflop
+    )
+    
+    # Crear el estado del juego
+    from .full_game_engine import GameState
+    return GameState(
+        stacks=stacks,
+        bets=bets,
+        player_status=jnp.zeros((6,), dtype=jnp.int8),
+        hole_cards=hole_cards,
+        comm_cards=comm_cards,
+        cur_player=jnp.array([2], dtype=jnp.int8),
+        street=jnp.array([street_choice], dtype=jnp.int8),
+        pot=pot_size,
+        deck=shuffled_deck,
+        deck_ptr=jnp.array([17]),
+        acted_this_round=jnp.array([0], dtype=jnp.int8),
+        action_hist=jnp.zeros((60,), dtype=jnp.int32),
+        hist_ptr=jnp.array([0]),
+        key=key
+    )
+
 @partial(jax.jit, static_argnames=("config",))
 def _cfr_step_with_mccfr(
     regrets: jax.Array,
@@ -479,37 +556,50 @@ def _cfr_step_with_mccfr(
     lut_table_size: int
 ) -> tuple[jax.Array, jax.Array]:
     """
-    NEW: Use MCCFR + CFR+ with DEBUG validation
+    Versión final con exploración forzada para entrenar todo el árbol del juego.
     """
-    # DEBUG: Validate input shapes and dtypes
-    # jax.debug.print("🔍 INPUT VALIDATION:")
-    # jax.debug.print("  regrets shape: {}, dtype: {}", regrets.shape, regrets.dtype)
-    # jax.debug.print("  strategy shape: {}, dtype: {}", strategy.shape, strategy.dtype)
-    # jax.debug.print("  config.batch_size: {}", config.batch_size)
-    # jax.debug.print("  lut_keys shape: {}, dtype: {}", lut_keys.shape, lut_keys.dtype)
-    # jax.debug.print("  lut_values shape: {}, dtype: {}", lut_values.shape, lut_values.dtype)
-    # Generate keys for real game simulations
     keys = jax.random.split(key, config.batch_size)
-    # jax.debug.print("  keys shape: {}", keys.shape)
-    # Use REAL game engine with LUT
-    payoffs, histories, game_results_batch = game_engine.unified_batch_simulation_with_lut(
-        keys, lut_keys, lut_values, lut_table_size, config.num_actions
-    )
-    # DEBUG: Validate game engine outputs
-    # jax.debug.print("📊 GAME ENGINE OUTPUTS:")
-    # jax.debug.print("  payoffs shape: {}, dtype: {}", payoffs.shape, payoffs.dtype)
-    # jax.debug.print("  game_results_batch hole_cards shape: {}", game_results_batch['hole_cards'].shape)
-    # jax.debug.print("  game_results_batch final_community shape: {}", game_results_batch['final_community'].shape)
-    # jax.debug.print("  game_results_batch final_pot shape: {}", game_results_batch['final_pot'].shape)
+
+    # Para cada juego en el lote, decidimos aleatoriamente si empezamos desde cero
+    # o desde un escenario complejo para forzar la exploración.
+    def generate_and_play_batch(k):
+        # 70% de las veces, simula una partida normal desde el principio.
+        # 30% de las veces, salta a un estado de juego diverso y complejo.
+        do_full_game_sim = jax.random.uniform(k) > 0.3
+
+        # Usamos lax.cond para elegir qué tipo de simulación ejecutar.
+        return lax.cond(
+            do_full_game_sim,
+            # Simulación normal
+            lambda: game_engine.unified_batch_simulation_with_lut(
+                jnp.array([k]), lut_keys, lut_values, lut_table_size, config.num_actions
+            )[0:3], # Devuelve payoffs, histories, game_results
+            # Simulación desde un estado forzado para exploración
+            lambda: game_engine.play_from_state(
+                generate_diverse_game_state(k), lut_keys, lut_values, lut_table_size, config.num_actions
+            )
+        )
+
+    # Usamos vmap para ejecutar esta lógica en todo el lote de forma eficiente.
+    payoffs, histories, game_results_batch = jax.vmap(generate_and_play_batch)(keys)
+
+    # --- El resto de la función (process_single_game, etc.) se mantiene ---
+    # --- exactamente igual que en la versión anterior. ---
     def process_single_game(game_idx):
         hole_cards_batch = game_results_batch['hole_cards'][game_idx]
         community_cards = game_results_batch['final_community'][game_idx]
         pot_size = jnp.squeeze(game_results_batch['final_pot'][game_idx])
-        # DEBUG: Validate inputs to compute_info_set_id
-        # jax.debug.print("🎯 process_single_game {}", game_idx)
-        # jax.debug.print("  hole_cards_batch shape: {}", hole_cards_batch.shape)
-        # jax.debug.print("  community_cards shape: {}", community_cards.shape)
-        # jax.debug.print("  pot_size: {}", pot_size)
+
+        def calculate_action_values_for_player(p_idx):
+            hole = hole_cards_batch[p_idx]
+            hand_strength = _evaluate_7card_simple(hole, community_cards, p_idx)
+            action_aggressiveness = jnp.array([-1.0, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0], dtype=jnp.float32)
+            strength_modifier = (hand_strength - 0.5) * 2.0
+            values = action_aggressiveness * strength_modifier * pot_size
+            return values
+
+        action_values = jax.vmap(calculate_action_values_for_player)(jnp.arange(6))
+        
         player_indices = jnp.arange(6)
         pot_size_broadcast = jnp.full(6, pot_size)
         info_set_indices = jax.vmap(
@@ -517,107 +607,34 @@ def _cfr_step_with_mccfr(
                 hole_cards, community_cards, player_idx, jnp.array([pot]), max_info_sets=config.max_info_sets
             )
         )(hole_cards_batch, player_indices, pot_size_broadcast)
-        # DEBUG: Validate info_set_indices
-        # jax.debug.print("  info_set_indices shape: {}, dtype: {}", info_set_indices.shape, info_set_indices.dtype)
-        # jax.debug.print("  info_set_indices min: {}, max: {}", jnp.min(info_set_indices), jnp.max(info_set_indices))
-        # CFR REAL: Calcular valores específicos por acción
-        game_payoffs = payoffs[game_idx].astype(jnp.float32)
-
-        # --- INICIO DEL BLOQUE FINAL Y TEÓRICAMENTE CORRECTO ---
-        # Calculamos los "action values" como una estimación del valor contrafactual de cada acción.
-        # Esta es la señal de aprendizaje principal para el algoritmo CFR.
         
-        # 'game_payoffs' NO se usa directamente para los regrets de acción, ya que es el resultado de
-        # una única trayectoria aleatoria y añadiría demasiado ruido. Lo usaremos más adelante si es necesario.
-        
-        def calculate_action_values_for_player(p_idx):
-            hole = hole_cards_batch[p_idx]
-            
-            # 1. Evaluar la fuerza real de la mano (nuestra mejor estimación de la probabilidad de ganar).
-            # Un valor cercano a 1.0 es una mano monstruosa; cercano a 0.0 es basura.
-            hand_strength = _evaluate_7card_simple(hole, community_cards, p_idx)
-
-            # 2. Definir el coste/recompensa intrínseco de cada acción en términos de agresividad.
-            # Estos valores son relativos y representan el control que cada acción ejerce sobre el pozo.
-            action_aggressiveness = jnp.array([
-                -1.0,  # FOLD: Pierdes la oportunidad de ganar el pozo. Coste base.
-                 0.0,  # CHECK: Neutral, no inviertes nada, no ganas nada extra.
-                 0.5,  # CALL: Inviertes para ver la siguiente carta, valor ligeramente positivo.
-                 1.0,  # BET_SMALL
-                 1.5,  # BET_MED
-                 2.0,  # BET_LARGE
-                 2.5,  # RAISE_SMALL
-                 3.0,  # RAISE_MED
-                 4.0   # ALL_IN: Máxima agresividad, máximo potencial de recompensa.
-            ], dtype=jnp.float32)
-
-            # 3. Calcular el valor final. La idea central es:
-            # "El valor de una acción agresiva se multiplica por la probabilidad de que tengas la mejor mano".
-            # Con una mano fuerte (strength=0.9), el valor de ALL_IN (4.0) es muy alto.
-            # Con una mano débil (strength=0.1), el valor de ALL_IN es muy bajo, haciendo que FOLD (-1.0) sea preferible.
-            
-            # Usamos (hand_strength - 0.5) * 2 para mapear la fuerza de [0, 1] a [-1, 1].
-            # Una mano con 50% de equity tiene un modificador de 0 (neutral).
-            strength_modifier = (hand_strength - 0.5) * 2.0
-            
-            # El valor de cada acción es su agresividad, escalada por la fuerza de la mano y el tamaño del pozo.
-            values = action_aggressiveness * strength_modifier * pot_size
-            
-            return values
-
-        # Usamos vmap para aplicar esta lógica a los 6 jugadores de forma eficiente.
-        action_values = jax.vmap(calculate_action_values_for_player)(jnp.arange(6))
-        # --- FIN DEL BLOQUE FINAL Y TEÓRICAMENTE CORRECTO ---
-        # jax.debug.print("  action_values shape: {}, dtype: {}", action_values.shape, action_values.dtype)
         return info_set_indices, action_values
-    # DEBUG: Before batch processing
-    # jax.debug.print("🔄 BATCH PROCESSING...")
-    batch_indices = jnp.arange(config.batch_size)
-    batch_info_sets, batch_action_values = jax.vmap(process_single_game)(batch_indices)
-    # DEBUG: Validate batch processing outputs
-    # jax.debug.print("  batch_info_sets shape: {}, dtype: {}", batch_info_sets.shape, batch_info_sets.dtype)
-    # jax.debug.print("  batch_action_values shape: {}, dtype: {}", batch_action_values.shape, batch_action_values.dtype)
-    # Flatten batch data for MCCFR
+
+    batch_info_sets, batch_action_values = jax.vmap(process_single_game)(jnp.arange(config.batch_size))
+    
     flat_info_sets = batch_info_sets.reshape(-1).astype(jnp.int32)
     flat_action_values = batch_action_values.reshape(-1, config.num_actions)
-    # Track visited info sets - FIX JAX JIT COMPATIBILITY  
-    visited_mask = jnp.zeros(config.max_info_sets, dtype=jnp.bool_)
-    flat_info_sets_safe = flat_info_sets.astype(jnp.int32)
-    visited_mask = visited_mask.at[flat_info_sets_safe].set(True)
-    # DEBUG: Validate flattened data
-    # jax.debug.print("  flat_action_values shape: {}, dtype: {}", flat_action_values.shape, flat_action_values.dtype)
-    # jax.debug.print("  flat_action_values min: {}, max: {}, mean: {}", jnp.min(flat_action_values), jnp.max(flat_action_values), jnp.mean(flat_action_values))
-    # jax.debug.print("  visited_mask sum: {}", jnp.sum(visited_mask))
-    # MCCFR operations
+
     from .mccfr_algorithm import mc_sampling_strategy, cfr_iteration
     game_key = jax.random.fold_in(key, iteration)
+    
     sampling_mask = mc_sampling_strategy(regrets, flat_info_sets, game_key, config)
-    # jax.debug.print("  sampling_mask sum: {}", jnp.sum(sampling_mask))
+    
     updated_regrets, updated_strategy = cfr_iteration(
         regrets, strategy, flat_info_sets, flat_action_values, sampling_mask, 
         iteration, config.learning_rate, config.use_regret_discounting, config
     )
 
-    # --- INICIO DEL BLOQUE A INSERTAR ---
-
-    # Aplicar la lógica de CFR+ (regrets no negativos) si está activada en la configuración.
-    # Esta es una corrección crítica para asegurar que el algoritmo converge correctamente.
     def apply_cfr_plus(r):
-        """Si CFR+ está activo, los regrets negativos se resetean a 0."""
         return jnp.maximum(r, 0.0)
-
     def do_nothing(r):
-        """Si CFR+ no está activo, los regrets no se modifican."""
         return r
 
-    # Usamos jax.lax.cond para que esta lógica condicional sea compatible con la compilación JIT.
     updated_regrets = lax.cond(
         config.use_cfr_plus,
-        apply_cfr_plus,    # Función a ejecutar si config.use_cfr_plus es True
-        do_nothing,        # Función a ejecutar si config.use_cfr_plus es False
-        updated_regrets    # El dato sobre el que operan las funciones
+        apply_cfr_plus,
+        do_nothing,
+        updated_regrets
     )
-
-    # --- FIN DEL BLOQUE A INSERTAR ---
 
     return updated_regrets, updated_strategy
