@@ -480,8 +480,17 @@ def generate_diverse_game_state(key: jax.Array, num_players: int = 6) -> GameSta
 
     hole_cards = deck[:num_players*2].reshape(num_players, 2)
     
+    # Determina dinámicamente cuántas cartas comunitarias se necesitan
     num_community_cards = jnp.where(street == 1, 3, jnp.where(street == 2, 4, jnp.where(street == 3, 5, 0)))
-    community_cards = jnp.pad(deck[num_players*2 : num_players*2 + num_community_cards], (0, 5 - num_community_cards), constant_values=-1)
+
+    # Para cumplir con JIT, tomamos un slice ESTÁTICO del tamaño máximo posible (5 cartas para el board)
+    potential_community_cards = lax.dynamic_slice(deck, (num_players*2,), (5,))
+
+    # Y usamos una MÁSCARA dinámica para seleccionar solo las cartas que necesitamos para la calle actual.
+    mask = jnp.arange(5) < num_community_cards
+
+    # Donde la máscara sea True, usamos la carta del mazo; donde sea False, ponemos -1.
+    community_cards = jnp.where(mask, potential_community_cards, -1)
 
     base_stacks = jnp.full((num_players,), 1000.0)
     stacks = lax.cond(
