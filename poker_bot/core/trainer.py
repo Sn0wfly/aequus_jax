@@ -291,7 +291,7 @@ class PokerTrainer:
             iter_key = jax.random.fold_in(key, i)
             self.regrets, self.strategy = _cfr_step_with_mccfr(
                 self.regrets, self.strategy, iter_key, self.config, self.iteration,
-                None, None, 0
+                self.lut_keys, self.lut_values, self.lut_table_size
             )
             # Update MCCFRTrainer with new values (outside JIT)
             self.mccfr_trainer.regrets = self.regrets
