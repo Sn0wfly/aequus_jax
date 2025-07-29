@@ -508,7 +508,7 @@ def generate_diverse_game_state(key):
     # Añadir complejidad según la calle
     stacks = lax.cond(
         street_choice >= 1,  # Post-flop
-        lambda: base_stacks * jax.random.uniform(key, (6,), 0.3, 1.0),  # Stacks variables
+        lambda: base_stacks * jax.random.uniform(key, shape=(6,), minval=0.3, maxval=1.0),  # Stacks variables
         lambda: base_stacks
     )
     
