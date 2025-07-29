@@ -548,7 +548,7 @@ def play_street(state: GameState, num_cards: int, num_actions: int = 9) -> GameS
             s,
             comm_cards=comm,
             deck_ptr=s.deck_ptr + num_cards,
-            acted_this_round=jnp.array([0], dtype=jnp.int8),
+            acted_this_round=jnp.zeros((6,), dtype=jnp.int8),
             cur_player=jnp.array([0], dtype=jnp.int8)
         )
     
