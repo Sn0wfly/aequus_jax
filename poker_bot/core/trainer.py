@@ -17,6 +17,7 @@ from typing import Dict, Any, Optional, List
 from functools import partial
 
 from . import full_game_engine as game_engine
+from .full_game_engine import GameState
 from .bucketing import compute_info_set_id, validate_bucketing_system
 from .mccfr_algorithm import MCCFRTrainer, mc_sampling_strategy, accumulate_regrets_fixed, calculate_strategy_optimized
 from .starting_hands import classify_starting_hand, classify_starting_hand_with_position
@@ -467,81 +468,49 @@ def create_trainer(config_path: Optional[str] = None) -> PokerTrainer:
     config = TrainerConfig.from_yaml(config_path)
     return PokerTrainer(config)
 
-@jax.jit
-def generate_diverse_game_state(key):
+def generate_diverse_game_state(key: jax.Array, num_players: int = 6) -> GameState:
     """
-    Genera un estado de juego diverso para exploración forzada.
-    Crea escenarios complejos en diferentes calles del juego.
+    Genera un estado de juego aleatorio en una calle (street) aleatoria
+    para forzar el entrenamiento en situaciones más diversas.
     """
-    # Decidir aleatoriamente en qué calle empezar (0=preflop, 1=flop, 2=turn, 3=river)
-    street_choice = jax.random.randint(key, (), 0, 4)
+    key, subkey1, subkey2, subkey3, subkey4 = jax.random.split(key, 5)
+
+    deck = jax.random.permutation(subkey1, jnp.arange(52))
+    street = jax.random.randint(subkey2, (), 0, 4)
+
+    hole_cards = deck[:num_players*2].reshape(num_players, 2)
     
-    # Generar un estado base
-    key, subkey = jax.random.split(key)
-    shuffled_deck = jax.random.permutation(subkey, jnp.arange(52))
-    
-    # Configurar hole cards para todos los jugadores
-    hole_cards = shuffled_deck[:12].reshape(6, 2)
-    
-    # Configurar community cards según la calle
-    comm_cards = jnp.full((5,), -1)
-    comm_cards = lax.cond(
-        street_choice >= 1,  # Si es flop o posterior
-        lambda: comm_cards.at[:3].set(shuffled_deck[12:15]),  # 3 cartas del flop
-        lambda: comm_cards
-    )
-    comm_cards = lax.cond(
-        street_choice >= 2,  # Si es turn o posterior
-        lambda: comm_cards.at[3].set(shuffled_deck[15]),  # 1 carta del turn
-        lambda: comm_cards
-    )
-    comm_cards = lax.cond(
-        street_choice >= 3,  # Si es river
-        lambda: comm_cards.at[4].set(shuffled_deck[16]),  # 1 carta del river
-        lambda: comm_cards
-    )
-    
-    # Configurar stacks y bets según la calle
-    base_stacks = jnp.full((6,), 1000.0)
-    base_bets = jnp.zeros((6,))
-    
-    # Añadir complejidad según la calle
+    num_community_cards = jnp.where(street == 1, 3, jnp.where(street == 2, 4, jnp.where(street == 3, 5, 0)))
+    community_cards = jnp.pad(deck[num_players*2 : num_players*2 + num_community_cards], (0, 5 - num_community_cards), constant_values=-1)
+
+    base_stacks = jnp.full((num_players,), 1000.0)
     stacks = lax.cond(
-        street_choice >= 1,  # Post-flop
-        lambda: base_stacks * jax.random.uniform(key, shape=(6,), minval=0.3, maxval=1.0),  # Stacks variables
+        street >= 1,
+        lambda: base_stacks * jax.random.uniform(subkey3, shape=(num_players,), minval=0.3, maxval=1.0), # CORREGIDO
         lambda: base_stacks
     )
     
-    bets = lax.cond(
-        street_choice >= 1,  # Post-flop
-        lambda: base_bets.at[0].set(50.0).at[1].set(100.0),  # Bets significativos
-        lambda: base_bets.at[0].set(5.0).at[1].set(10.0)  # Bets preflop
+    pot = lax.cond(
+        street >= 1,
+        lambda: jax.random.uniform(subkey4, shape=(), minval=20.0, maxval=500.0),
+        lambda: 15.0
     )
     
-    # Configurar pot según la calle
-    pot_size = lax.cond(
-        street_choice >= 1,  # Post-flop
-        lambda: jnp.array([200.0]),  # Pot grande
-        lambda: jnp.array([15.0])  # Pot preflop
-    )
-    
-    # Crear el estado del juego
-    from .full_game_engine import GameState
     return GameState(
         stacks=stacks,
-        bets=bets,
-        player_status=jnp.zeros((6,), dtype=jnp.int8),
+        bets=jnp.zeros((num_players,)),
+        player_status=jnp.zeros((num_players,), dtype=jnp.int8),
         hole_cards=hole_cards,
-        comm_cards=comm_cards,
-        cur_player=jnp.array([2], dtype=jnp.int8),
-        street=jnp.array([street_choice], dtype=jnp.int8),
-        pot=pot_size,
-        deck=shuffled_deck,
-        deck_ptr=jnp.array([17]),
-        acted_this_round=jnp.array([0], dtype=jnp.int8),
+        comm_cards=community_cards,
+        cur_player=jnp.array([0], dtype=jnp.int8),
+        street=street[None].astype(jnp.int8),
+        pot=pot[None],
+        deck=deck,
+        deck_ptr=jnp.array([num_players*2 + num_community_cards]),
+        acted_this_round=jnp.zeros((num_players,), dtype=jnp.int8),
+        key=key,
         action_hist=jnp.zeros((60,), dtype=jnp.int32),
-        hist_ptr=jnp.array([0]),
-        key=key
+        hist_ptr=jnp.array([0])
     )
 
 @partial(jax.jit, static_argnames=("config",))
@@ -556,35 +525,26 @@ def _cfr_step_with_mccfr(
     lut_table_size: int
 ) -> tuple[jax.Array, jax.Array]:
     """
-    Versión final con exploración forzada para entrenar todo el árbol del juego.
+    Versión final con exploración forzada y corrección de formas para JIT.
     """
     keys = jax.random.split(key, config.batch_size)
 
-    # Para cada juego en el lote, decidimos aleatoriamente si empezamos desde cero
-    # o desde un escenario complejo para forzar la exploración.
     def generate_and_play_batch(k):
-        # 70% de las veces, simula una partida normal desde el principio.
-        # 30% de las veces, salta a un estado de juego diverso y complejo.
         do_full_game_sim = jax.random.uniform(k) > 0.3
 
-        # Usamos lax.cond para elegir qué tipo de simulación ejecutar.
         return lax.cond(
             do_full_game_sim,
-            # Simulación normal
-            lambda: game_engine.unified_batch_simulation_with_lut(
-                jnp.array([k]), lut_keys, lut_values, lut_table_size, config.num_actions
-            )[0:3], # Devuelve payoffs, histories, game_results
-            # Simulación desde un estado forzado para exploración
+            # CORREGIDO: Llama a play_one_game para que la forma de salida coincida.
+            lambda: game_engine.play_one_game(
+                k, lut_keys, lut_values, lut_table_size, config.num_actions
+            ),
             lambda: game_engine.play_from_state(
                 generate_diverse_game_state(k), lut_keys, lut_values, lut_table_size, config.num_actions
             )
         )
 
-    # Usamos vmap para ejecutar esta lógica en todo el lote de forma eficiente.
     payoffs, histories, game_results_batch = jax.vmap(generate_and_play_batch)(keys)
 
-    # --- El resto de la función (process_single_game, etc.) se mantiene ---
-    # --- exactamente igual que en la versión anterior. ---
     def process_single_game(game_idx):
         hole_cards_batch = game_results_batch['hole_cards'][game_idx]
         community_cards = game_results_batch['final_community'][game_idx]
