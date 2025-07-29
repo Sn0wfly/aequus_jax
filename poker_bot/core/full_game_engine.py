@@ -613,7 +613,7 @@ def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9):
     pot = jnp.array([15.0])
     deck = jnp.arange(52)
     deck_ptr = jnp.array([12])
-    acted_this_round = jnp.array([0], dtype=jnp.int8)
+    acted_this_round = jnp.zeros((6,), dtype=jnp.int8)
     action_hist = jnp.zeros((MAX_GAME_LENGTH,), dtype=jnp.int32)
     hist_ptr = jnp.array([0])
     
@@ -695,7 +695,7 @@ def initial_state_for_idx(idx):
     pot = jnp.array([15.0])
     deck = jnp.arange(52)
     deck_ptr = jnp.array([12])
-    acted_this_round = jnp.array([0], dtype=jnp.int8)
+    acted_this_round = jnp.zeros((6,), dtype=jnp.int8)
     action_hist = jnp.zeros((MAX_GAME_LENGTH,), dtype=jnp.int32)
     hist_ptr = jnp.array([0])
     
