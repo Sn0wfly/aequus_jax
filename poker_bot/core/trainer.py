@@ -539,16 +539,20 @@ def _cfr_step_with_mccfr(
     keys = jax.random.split(key, config.batch_size)
 
     def generate_and_play_batch(k):
-        do_full_game_sim = jax.random.uniform(k) > 0.3
+        # Desacoplamos la aleatoriedad: una llave para la decisión, otra para el juego.
+        decision_key, game_key = jax.random.split(k)
+        
+        do_full_game_sim = jax.random.uniform(decision_key) > 0.3
 
         return lax.cond(
             do_full_game_sim,
-            # CORREGIDO: Llama a play_one_game para que la forma de salida coincida.
+            # Pasamos la llave 'game_key' a la simulación.
             lambda: game_engine.play_one_game(
-                k, lut_keys, lut_values, lut_table_size, config.num_actions
+                game_key, lut_keys, lut_values, lut_table_size, config.num_actions
             ),
+            # Pasamos la llave 'game_key' a la simulación.
             lambda: game_engine.play_from_state(
-                generate_diverse_game_state(k), lut_keys, lut_values, lut_table_size, config.num_actions
+                generate_diverse_game_state(game_key), lut_keys, lut_values, lut_table_size, config.num_actions
             )
         )
 
