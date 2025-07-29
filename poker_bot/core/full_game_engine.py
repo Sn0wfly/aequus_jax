@@ -772,7 +772,7 @@ try:
 except:
     pass  # Continue without LUT for testing
 
-@partial(jax.jit, static_argnames=("lut_keys", "lut_values", "table_size", "num_actions"))
+# La decoración @partial(jax.jit, ...) ha sido eliminada.
 def play_from_state(initial_state: GameState, lut_keys, lut_values, table_size, num_actions=9):
     """
     Juega una partida de póker a partir de un estado inicial dado.
