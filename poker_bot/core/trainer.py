@@ -556,12 +556,8 @@ def _cfr_step_with_mccfr(
             )
         )
 
-    payoffs, histories, game_results_batch = jax.vmap(generate_and_play_batch)(keys)
+        payoffs, histories, game_results_batch = jax.vmap(generate_and_play_batch)(keys)
     
-    # Track exploration count for monitoring
-    exploration_count = jnp.sum(~jax.vmap(lambda k: jax.random.uniform(jax.random.split(k)[0]) > 0.3)(keys))
-    jax.debug.print("🔍 Exploration executions: {}/{}", exploration_count, config.batch_size)
-
     def process_single_game(game_idx):
         hole_cards_batch = game_results_batch['hole_cards'][game_idx]
         community_cards = game_results_batch['final_community'][game_idx]
@@ -588,30 +584,6 @@ def _cfr_step_with_mccfr(
         return info_set_indices, action_values
 
     batch_info_sets, batch_action_values = jax.vmap(process_single_game)(jnp.arange(config.batch_size))
-    
-    # Debug: Compare samples between normal and forced exploration
-    normal_mask = jax.vmap(lambda k: jax.random.uniform(jax.random.split(k)[0]) <= 0.7)(keys)
-
-    # Expandir mask 
-    normal_mask_expanded = normal_mask[:, None].repeat(6, axis=1)
-
-    forced_info_sets = jnp.where(~normal_mask_expanded, batch_info_sets, -1).flatten()
-    normal_info_sets = jnp.where(normal_mask_expanded, batch_info_sets, -1).flatten()
-
-    # Solo mostrar primeros elementos SIN filtrar (evitar boolean indexing)
-    jax.debug.print("🔍 Forced first 10: {}", forced_info_sets[:10])
-    jax.debug.print("🔍 Normal first 10: {}", normal_info_sets[:10])
-
-    # Contar válidos (esto SÍ funciona)
-    forced_count = jnp.sum(forced_info_sets >= 0)
-    normal_count = jnp.sum(normal_info_sets >= 0) 
-
-    jax.debug.print("🔍 Forced valid count: {}", forced_count)
-    jax.debug.print("🔍 Normal valid count: {}", normal_count)
-
-    # Mostrar algunos valores específicos para comparar
-    jax.debug.print("🔍 Forced max: {}", jnp.max(forced_info_sets))
-    jax.debug.print("🔍 Normal max: {}", jnp.max(normal_info_sets))
     
     flat_info_sets = batch_info_sets.reshape(-1).astype(jnp.int32)
     flat_action_values = batch_action_values.reshape(-1, config.num_actions)
