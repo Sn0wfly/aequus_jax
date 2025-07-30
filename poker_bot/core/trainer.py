@@ -556,7 +556,7 @@ def _cfr_step_with_mccfr(
             )
         )
 
-        payoffs, histories, game_results_batch = jax.vmap(generate_and_play_batch)(keys)
+    payoffs, histories, game_results_batch = jax.vmap(generate_and_play_batch)(keys)
     
     def process_single_game(game_idx):
         hole_cards_batch = game_results_batch['hole_cards'][game_idx]
