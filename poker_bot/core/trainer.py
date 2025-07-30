@@ -576,16 +576,12 @@ def _cfr_step_with_mccfr(
         player_indices = jnp.arange(6)
         pot_size_broadcast = jnp.full(6, pot_size)
         
-        # Crear stack sizes dinámicos (más realista)
-        stack_sizes = jax.random.uniform(jax.random.PRNGKey(42), (6,), minval=100.0, maxval=2000.0)
-        
         info_set_indices = jax.vmap(
-            lambda hole_cards, player_idx, pot, stack: compute_info_set_id(
+            lambda hole_cards, player_idx, pot: compute_info_set_id(
                 hole_cards, community_cards, player_idx, jnp.array([pot]), 
-                stack_size=jnp.array([stack]),
-                max_info_sets=config.max_info_sets
+                stack_size=jnp.array([1000.0]), max_info_sets=config.max_info_sets
             )
-        )(hole_cards_batch, player_indices, pot_size_broadcast, stack_sizes)
+        )(hole_cards_batch, player_indices, pot_size_broadcast)
         
         return info_set_indices, action_values
 
