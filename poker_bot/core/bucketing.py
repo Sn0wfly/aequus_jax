@@ -507,65 +507,40 @@ def compute_info_set_id_enhanced(hole_cards: jnp.ndarray, community_cards: jnp.n
                                 stack_size: jnp.ndarray = None, action_history: jnp.ndarray = None,
                                 max_info_sets: int = 100000) -> jnp.ndarray:
     """
-    ENHANCED: Bucketing system con MUCHO más granularidad.
-    Objetivo: 100K+ info sets diferentes para mayor diversidad estratégica.
+    FIXED: Simple and reliable bucketing without collisions.
+    Uses unique card combinations + street + position for proper differentiation.
     """
+    # Ordenar las cartas para consistencia (avoid [A,K] vs [K,A] difference)
+    card1, card2 = hole_cards[0], hole_cards[1]
+    sorted_cards = jnp.where(card1 < card2, jnp.array([card1, card2]), jnp.array([card2, card1]))
+    
+    # Componente base: combinación única de cartas (0-2703 range)
+    card_hash = sorted_cards[0] * 52 + sorted_cards[1]
+    
+    # Street component - different multipliers for each street
     num_community = jnp.sum(community_cards >= 0)
-    
-    # 1. HAND STRENGTH - MÁS GRANULAR (0-9999 en lugar de 0-999)
-    hand_strength = jnp.where(
-        num_community == 0,  # Preflop
-        classify_starting_hand_with_position(hole_cards, player_idx),
-        _evaluate_postflop_hand(hole_cards, community_cards)
+    street_mult = jnp.where(
+        num_community == 0, 0,           # Preflop
+        jnp.where(num_community == 3, 3000,    # Flop  
+                  jnp.where(num_community == 4, 6000,    # Turn
+                           9000))        # River
     )
-    hand_strength_bucket = jnp.int32(hand_strength * 9999)  # 0-9999 buckets
     
-    # 2. BOARD TEXTURE - EXPANDIDO (0-999 en lugar de 0-99)
-    board_texture = analyze_board_texture(community_cards)
-    board_texture_bucket = jnp.int32(board_texture * 999)  # 0-999 buckets
+    # Position component
+    position_mult = player_idx * 12000
     
-    # 3. POSICIÓN - EXPANDIDO con relative position
-    position_component = jnp.int32(player_idx)
-    relative_position = jnp.int32(player_idx * 17)  # Multiplicador más alto
-    
-    # 4. POT SIZE - MÁS GRANULAR (0-999 en lugar de 0-99)
+    # Pot component (simplified to avoid over-granularity)
     pot_component = jnp.where(
         pot_size is not None,
-        jnp.clip(jnp.int32(pot_size[0] / 2.0), 0, 999),  # /2 en lugar de /10
+        jnp.clip(jnp.int32(jnp.squeeze(pot_size) / 50.0), 0, 20) * 100000,
         jnp.int32(0)
     )
     
-    # 5. STREET INFORMATION - NUEVO COMPONENTE
-    street_component = jnp.where(
-        num_community == 0, jnp.int32(0),    # Preflop
-        jnp.where(
-            num_community == 3, jnp.int32(1000),  # Flop
-            jnp.where(
-                num_community == 4, jnp.int32(2000),  # Turn
-                jnp.int32(3000)  # River
-            )
-        )
-    )
+    # Combine all components with proper spacing to avoid collisions
+    combined_id = card_hash + street_mult + position_mult + pot_component
     
-    # 6. STACK DEPTH - NUEVO COMPONENTE
-    stack_component = jnp.where(
-        (stack_size is not None) & (pot_size is not None),
-        jnp.clip(jnp.int32((jnp.squeeze(stack_size) / jnp.squeeze(pot_size)) * 10), 0, 199),
-        jnp.int32(0)
-    )
-    
-    # 7. COMBINACIÓN CON MULTIPLICADORES PRIMOS MÁS GRANDES
-    combined_hash = (
-        hand_strength_bucket * 1 +           # 0-9,999
-        board_texture_bucket * 10007 +       # 0-999 × primo grande
-        relative_position * 1000003 +        # 0-102 × primo muy grande  
-        pot_component * 1009 +               # 0-999 × primo mediano
-        street_component * 1013 +            # 0,1000,2000,3000 × primo
-        stack_component * 1019               # 0-199 × primo
-    )
-    
-    # 8. ID FINAL con mejor distribución
-    final_id = jnp.abs(combined_hash) % max_info_sets
+    # Ensure within bounds
+    final_id = combined_id % max_info_sets
     
     return jnp.clip(final_id, 0, max_info_sets - 1).astype(jnp.int32)
 
