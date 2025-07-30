@@ -589,6 +589,18 @@ def _cfr_step_with_mccfr(
 
     batch_info_sets, batch_action_values = jax.vmap(process_single_game)(jnp.arange(config.batch_size))
     
+    # Debug: Compare unique info sets between normal and forced exploration
+    normal_mask = jax.vmap(lambda k: jax.random.uniform(jax.random.split(k)[0]) <= 0.7)(keys)
+    forced_info_sets = jnp.where(~normal_mask[:, None], batch_info_sets, -1).flatten()
+    normal_info_sets = jnp.where(normal_mask[:, None], batch_info_sets, -1).flatten()
+
+    forced_unique = jnp.unique(forced_info_sets[forced_info_sets >= 0])
+    normal_unique = jnp.unique(normal_info_sets[normal_info_sets >= 0])
+
+    jax.debug.print("🔍 Forced unique info sets: {}", forced_unique.shape[0])
+    jax.debug.print("🔍 Normal unique info sets: {}", normal_unique.shape[0])
+    jax.debug.print("🔍 Overlap: {}", jnp.intersect1d(forced_unique, normal_unique).shape[0])
+    
     flat_info_sets = batch_info_sets.reshape(-1).astype(jnp.int32)
     flat_action_values = batch_action_values.reshape(-1, config.num_actions)
 
