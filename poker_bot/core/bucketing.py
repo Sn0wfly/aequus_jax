@@ -498,3 +498,155 @@ def _compute_hand_strength_estimate(hole_cards: jnp.ndarray, community_cards: jn
     strength = high_card_value + pair_bonus + suited_bonus + connected_bonus
     
     return jnp.clip(strength, 0.0, 1.0)
+
+# Enhanced Bucketing System for Maximum Strategic Diversity
+
+@jax.jit
+def compute_info_set_id_enhanced(hole_cards: jnp.ndarray, community_cards: jnp.ndarray, 
+                                player_idx: int, pot_size: jnp.ndarray = None, 
+                                stack_size: jnp.ndarray = None, action_history: jnp.ndarray = None,
+                                max_info_sets: int = 100000) -> jnp.ndarray:
+    """
+    ENHANCED: Bucketing system con MUCHO más granularidad.
+    Objetivo: 100K+ info sets diferentes para mayor diversidad estratégica.
+    """
+    num_community = jnp.sum(community_cards >= 0)
+    
+    # 1. HAND STRENGTH - MÁS GRANULAR (0-9999 en lugar de 0-999)
+    hand_strength = jnp.where(
+        num_community == 0,  # Preflop
+        classify_starting_hand_with_position(hole_cards, player_idx),
+        _evaluate_postflop_hand(hole_cards, community_cards)
+    )
+    hand_strength_bucket = jnp.int32(hand_strength * 9999)  # 0-9999 buckets
+    
+    # 2. BOARD TEXTURE - EXPANDIDO (0-999 en lugar de 0-99)
+    board_texture = analyze_board_texture(community_cards)
+    board_texture_bucket = jnp.int32(board_texture * 999)  # 0-999 buckets
+    
+    # 3. POSICIÓN - EXPANDIDO con relative position
+    position_component = jnp.int32(player_idx)
+    relative_position = jnp.int32(player_idx * 17)  # Multiplicador más alto
+    
+    # 4. POT SIZE - MÁS GRANULAR (0-999 en lugar de 0-99)
+    pot_component = jnp.where(
+        pot_size is not None,
+        jnp.clip(jnp.int32(pot_size[0] / 2.0), 0, 999),  # /2 en lugar de /10
+        jnp.int32(0)
+    )
+    
+    # 5. STREET INFORMATION - NUEVO COMPONENTE
+    street_component = jnp.where(
+        num_community == 0, jnp.int32(0),    # Preflop
+        jnp.where(
+            num_community == 3, jnp.int32(1000),  # Flop
+            jnp.where(
+                num_community == 4, jnp.int32(2000),  # Turn
+                jnp.int32(3000)  # River
+            )
+        )
+    )
+    
+    # 6. STACK DEPTH - NUEVO COMPONENTE
+    stack_component = jnp.where(
+        (stack_size is not None) & (pot_size is not None),
+        jnp.clip(jnp.int32((jnp.squeeze(stack_size) / jnp.squeeze(pot_size)) * 10), 0, 199),
+        jnp.int32(0)
+    )
+    
+    # 7. COMBINACIÓN CON MULTIPLICADORES PRIMOS MÁS GRANDES
+    combined_hash = (
+        hand_strength_bucket * 1 +           # 0-9,999
+        board_texture_bucket * 10007 +       # 0-999 × primo grande
+        relative_position * 1000003 +        # 0-102 × primo muy grande  
+        pot_component * 1009 +               # 0-999 × primo mediano
+        street_component * 1013 +            # 0,1000,2000,3000 × primo
+        stack_component * 1019               # 0-199 × primo
+    )
+    
+    # 8. ID FINAL con mejor distribución
+    final_id = jnp.abs(combined_hash) % max_info_sets
+    
+    return jnp.clip(final_id, 0, max_info_sets - 1).astype(jnp.int32)
+
+@jax.jit
+def compute_detailed_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
+    """
+    ENHANCED: Hand bucketing con granularidad extrema.
+    En lugar de 169 buckets preflop, usa 1000+ buckets diferentes.
+    """
+    ranks = (hole_cards // 4).astype(jnp.int32)
+    suits = (hole_cards % 4).astype(jnp.int32)
+    
+    r1 = jnp.maximum(ranks[0], ranks[1]).astype(jnp.int32)
+    r2 = jnp.minimum(ranks[0], ranks[1]).astype(jnp.int32)
+    
+    is_pair = (r1 == r2)
+    is_suited = (suits[0] == suits[1])
+    
+    # GRANULARIDAD EXTREMA: usar las cartas exactas, no solo rangos
+    card1_value = hole_cards[0].astype(jnp.int32)
+    card2_value = hole_cards[1].astype(jnp.int32)
+    
+    def pocket_pair_detailed():
+        # En lugar de 13 buckets, usar 52*51/2 = 1326 buckets
+        return card1_value * 53 + card2_value
+    
+    def suited_hand_detailed():
+        return 1400 + card1_value * 53 + card2_value
+    
+    def offsuit_hand_detailed():
+        return 2800 + card1_value * 53 + card2_value
+    
+    detailed_bucket = lax.cond(
+        is_pair,
+        pocket_pair_detailed,
+        lambda: lax.cond(
+            is_suited,
+            suited_hand_detailed,
+            offsuit_hand_detailed
+        )
+    )
+    
+    # Post-flop: agregar información de board
+    num_community = jnp.sum(community_cards >= 0)
+    postflop_adjustment = jnp.where(
+        num_community >= 3,
+        jnp.int32(5200) + jnp.sum(jnp.where(community_cards >= 0, community_cards, 0)),
+        jnp.int32(0)
+    )
+    
+    return (detailed_bucket + postflop_adjustment).astype(jnp.int32)
+
+# Función de validación para testear la mejora
+def validate_enhanced_bucketing():
+    """Valida que el nuevo sistema genera más diversidad."""
+    import numpy as np
+    
+    # Generar 10,000 scenarios aleatorios
+    scenarios = []
+    for _ in range(10000):
+        hole_cards = np.random.choice(52, 2, replace=False)
+        community = np.concatenate([np.random.choice(50, 3, replace=False), [-1, -1]])
+        pot = np.array([np.random.uniform(10, 500)])
+        stack = np.array([np.random.uniform(100, 2000)])
+        position = np.random.randint(0, 6)
+        
+        # Convertir a JAX arrays
+        hole_jax = jnp.array(hole_cards)
+        comm_jax = jnp.array(community)
+        pot_jax = jnp.array(pot)
+        stack_jax = jnp.array(stack)
+        
+        bucket_id = compute_info_set_id_enhanced(
+            hole_jax, comm_jax, position, pot_jax, stack_jax, max_info_sets=500000
+        )
+        scenarios.append(int(bucket_id))
+    
+    unique_buckets = len(set(scenarios))
+    print(f"🎯 Enhanced Bucketing Results:")
+    print(f"   Unique buckets: {unique_buckets:,} / 10,000 scenarios")
+    print(f"   Diversity: {unique_buckets/10000*100:.1f}%")
+    print(f"   Estimated full coverage: {unique_buckets*50:,} info sets")
+    
+    return unique_buckets > 5000  # Esperamos >50% de diversidad

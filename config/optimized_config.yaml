@@ -1,0 +1,173 @@
+# Aequus JAX Poker AI - OPTIMIZED Configuration
+# Configuración mejorada para maximizar diversidad de info sets
+
+# ==============================================================================
+# CORE TRAINING PARAMETERS - OPTIMIZED
+# ==============================================================================
+
+# CFR Training Settings
+num_iterations: 1000000             # AUMENTADO: Más iteraciones para convergencia
+batch_size: 16384                   # AUMENTADO: Más diversidad por batch  
+learning_rate: 0.005                # REDUCIDO: Más estable para espacios grandes
+max_info_sets: 2000000             # AUMENTADO: 4x más espacio de info sets
+save_interval: 50000                # MÁS FRECUENTE: Checkpoints cada 50K
+log_interval: 500                   # MÁS FRECUENTE: Logs cada 500 iter
+
+# Strategy Parameters  
+num_actions: 9                      # MANTENER: Sistema de 9 acciones funciona bien
+regret_floor: -1000.0              # AUMENTADO: Más rango para regrets
+regret_ceiling: 1000.0             # AUMENTADO: Más rango para regrets  
+strategy_threshold: 0.0000001      # REDUCIDO: Más sensible a cambios pequeños
+
+# Hybrid CFR+ Settings
+use_cfr_plus: true                 # MANTENER: CFR+ ayuda con convergencia
+use_regret_discounting: true       # ACTIVAR: Ayuda con exploración continua
+discount_factor: 0.999             # AUMENTADO: Descuento más lento
+
+# ==============================================================================
+# MC-CFR PARAMETERS - ENHANCED FOR DIVERSITY
+# ==============================================================================
+
+# Monte Carlo Sampling Settings  
+mc_sampling_rate: 0.8              # REDUCIDO: 80% sampling para más diversidad
+mc_exploration_epsilon: 0.4        # REDUCIDO: Más explotación de info sets nuevos
+mc_min_samples_per_info_set: 50    # REDUCIDO: Aceptar info sets con menos samples
+mc_max_samples_per_info_set: 5000  # REDUCIDO: Evitar over-fitting en pocos info sets
+
+# MC-CFR Performance Tuning
+mc_batch_size: 2048                # AUMENTADO: Procesar más instancias por batch
+mc_regret_floor: -100.0           # AUMENTADO: Más rango negativo
+mc_discount_factor: 0.995         # REDUCIDO: Descuento más agresivo
+
+# ==============================================================================
+# ENHANCED BUCKETING SYSTEM - NEW PARAMETERS
+# ==============================================================================
+
+# Hand Abstraction - ENHANCED
+preflop_buckets: 1326              # AUMENTADO: Todas las combinaciones de cartas
+postflop_buckets: 10000            # AUMENTADO: 10K buckets postflop  
+position_buckets: 6                # MANTENER: 6-max positions
+street_buckets: 4                  # MANTENER: 4 streets
+stack_buckets: 200                 # AUMENTADO: 200 categorías de stack
+pot_buckets: 1000                  # AUMENTADO: 1000 categorías de pot
+
+# Bucketing Weights - REBALANCED
+hand_strength_weight: 0.35         # REDUCIDO: Menos peso a hand strength
+position_weight: 0.15              # REDUCIDO: Menos peso a posición
+stack_weight: 0.25                 # AUMENTADO: Más peso a stack depth
+pot_weight: 0.25                   # AUMENTADO: Más peso a pot size
+
+# NEW: Enhanced Bucketing Parameters
+card_level_granularity: true       # NUEVO: Usar cartas exactas, no solo rangos
+board_texture_granularity: 1000    # NUEVO: 1000 niveles de board texture
+stack_to_pot_granularity: 200      # NUEVO: 200 niveles de SPR
+street_differentiation: true       # NUEVO: Diferenciar fuertemente por street
+
+# NEW: Advanced Info Set Features
+include_action_history: true       # NUEVO: Incluir historial de acciones
+action_history_depth: 5           # NUEVO: Últimas 5 acciones
+include_betting_patterns: true     # NUEVO: Patrones de apuestas
+betting_pattern_buckets: 50        # NUEVO: 50 patrones diferentes
+
+# ==============================================================================
+# GAME CONFIGURATION - ENHANCED DIVERSITY  
+# ==============================================================================
+
+# Poker Game Settings - UNCHANGED (working well)
+num_players: 6                     
+starting_stack: 1000.0             
+small_blind: 5.0                   
+big_blind: 10.0                    
+
+# Betting Configuration - ENHANCED
+bet_sizes:                         # MÁS OPCIONES de bet sizing
+  - 0.2                           # 20% pot (muy pequeña)
+  - 0.33                          # 1/3 pot  
+  - 0.5                           # 1/2 pot
+  - 0.67                          # 2/3 pot
+  - 1.0                           # Pot bet
+  - 1.5                           # 1.5x pot  
+  - 2.0                           # 2x pot
+  - 3.0                           # 3x pot (overbet)
+
+# ==============================================================================
+# PERFORMANCE OPTIMIZATION - FOR LARGER SPACES
+# ==============================================================================
+
+# JAX Configuration
+jit_compile: true                  
+use_mixed_precision: false         # DESACTIVAR: Más precisión para espacios grandes
+memory_fraction: 0.9               # REDUCIDO: Más memoria disponible
+
+# Memory Management - ENHANCED
+enable_checkpointing: true         
+adaptive_batch_size: true          # ACTIVAR: Ajustar batch size dinámicamente
+memory_warning_threshold: 0.8      # REDUCIDO: Advertir antes
+
+# Parallel Processing - ENHANCED  
+num_simulation_threads: 8          # AUMENTADO: Más paralelización
+vectorize_batch_ops: true          
+enable_gpu_batching: true          # NUEVO: Batching optimizado para GPU
+
+# ==============================================================================
+# VALIDATION AND TESTING - ENHANCED
+# ==============================================================================
+
+# Validation Settings
+validate_before_training: true     
+validate_after_training: true      
+validation_frequency: 2500         # MÁS FRECUENTE: Cada 2500 iteraciones
+
+# Enhanced Testing
+info_set_diversity_tests: true     # NUEVO: Test diversidad de info sets
+convergence_monitoring: true       # NUEVO: Monitorear convergencia
+exploitation_vs_exploration: true  # NUEVO: Balance exploración/explotación
+
+# Target Metrics - NEW
+target_unique_info_sets: 100000    # OBJETIVO: 100K+ info sets únicos
+target_entropy_range: [1.8, 2.5]   # OBJETIVO: Entropy en rango saludable
+target_regret_magnitude: 1e7       # OBJETIVO: Regret magnitude aceptable
+
+# ==============================================================================
+# LOGGING AND OUTPUT - ENHANCED MONITORING
+# ==============================================================================
+
+# Logging Configuration - ENHANCED
+log_level: "INFO"                  
+log_to_file: true                  
+log_file_path: "logs/enhanced_training.log"
+
+# Enhanced Monitoring - NEW
+log_info_set_diversity: true       # NUEVO: Log diversidad de info sets
+log_bucketing_efficiency: true     # NUEVO: Log eficiencia del bucketing  
+log_memory_usage: true            # NUEVO: Log uso de memoria
+log_convergence_metrics: true      # NUEVO: Log métricas de convergencia
+
+# Progress Reporting - ENHANCED
+show_progress_bar: true            
+report_frequency: 50               # MÁS FRECUENTE: Cada 50 iteraciones
+detailed_statistics: true          
+save_intermediate_results: true    # NUEVO: Guardar resultados intermedios
+
+# ==============================================================================
+# IMPLEMENTATION NOTES
+# ==============================================================================
+
+# Configuration Notes:
+# - max_info_sets aumentado a 2M para permitir más diversidad
+# - Batch size aumentado para mejor exploración del espacio de estados  
+# - Learning rate reducido para estabilidad en espacios más grandes
+# - Sampling rate reducido para forzar más diversidad
+# - Bucketing system completamente reescrito para granularidad extrema
+# - Monitoreo mejorado para tracking de diversidad de info sets
+#
+# Expected Results:
+# - 100K+ unique info sets (vs. actual 13K)
+# - Better strategic diversity
+# - Improved convergence to Nash equilibrium
+# - More realistic poker AI behavior
+#
+# Memory Requirements:
+# - ~8GB GPU memory para 2M info sets
+# - ~16GB RAM para operaciones batch grandes
+# - Checkpointing frecuente para recovery

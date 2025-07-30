@@ -18,7 +18,7 @@ from functools import partial
 
 from . import full_game_engine as game_engine
 from .full_game_engine import GameState
-from .bucketing import compute_info_set_id, validate_bucketing_system
+from .bucketing import compute_info_set_id_enhanced as compute_info_set_id, validate_bucketing_system
 from .mccfr_algorithm import MCCFRTrainer, mc_sampling_strategy, accumulate_regrets_fixed, calculate_strategy_optimized
 from .starting_hands import classify_starting_hand, classify_starting_hand_with_position
 from .config import TrainerConfig
