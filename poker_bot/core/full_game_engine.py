@@ -573,7 +573,10 @@ def resolve_showdown(state: GameState, lut_keys, lut_values, table_size) -> jax.
     
     def single():
         winner = jnp.argmax(active)
-        return -state.bets.at[winner].add(pot_scalar)
+        # ✅ CORRECTO: Winner gets pot, others lose their bets
+        payoffs = -state.bets  # Everyone loses their bets first
+        payoffs = payoffs.at[winner].add(pot_scalar)  # Winner gets the pot
+        return payoffs
     
     def multiple():
         # Combine hole and community cards for each active player
@@ -588,7 +591,11 @@ def resolve_showdown(state: GameState, lut_keys, lut_values, table_size) -> jax.
         winners = active_strengths == jnp.max(active_strengths)
         num_winners = jnp.sum(winners)
         share = pot_scalar / num_winners
-        return -state.bets + winners * share
+        
+        # ✅ CORRECTO: Everyone loses bets, winners split pot
+        payoffs = -state.bets  # Everyone loses their bets first
+        payoffs = payoffs + winners * share  # Winners split the pot
+        return payoffs
     
     return lax.cond(active.sum() == 1, single, multiple)
 
