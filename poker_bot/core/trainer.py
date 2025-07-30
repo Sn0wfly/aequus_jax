@@ -589,28 +589,28 @@ def _cfr_step_with_mccfr(
 
     batch_info_sets, batch_action_values = jax.vmap(process_single_game)(jnp.arange(config.batch_size))
     
-    # Debug: Compare unique info sets between normal and forced exploration
+    # Debug: Compare samples between normal and forced exploration
     normal_mask = jax.vmap(lambda k: jax.random.uniform(jax.random.split(k)[0]) <= 0.7)(keys)
 
-    # Expandir mask a la forma de batch_info_sets
-    normal_mask_expanded = normal_mask[:, None].repeat(6, axis=1)  # Para 6 jugadores
+    # Solo mostrar algunos samples para comparar
+    normal_mask_expanded = normal_mask[:, None].repeat(6, axis=1)
 
-    # Usar where en lugar de boolean indexing
-    forced_info_sets = jnp.where(~normal_mask_expanded, batch_info_sets, -1)
-    normal_info_sets = jnp.where(normal_mask_expanded, batch_info_sets, -1)
+    forced_info_sets = jnp.where(~normal_mask_expanded, batch_info_sets, -1).flatten()
+    normal_info_sets = jnp.where(normal_mask_expanded, batch_info_sets, -1).flatten()
 
-    # Contar únicos sin boolean indexing
-    def count_valid_unique(arr):
-        valid_arr = jnp.where(arr >= 0, arr, 0)  # Reemplazar -1 con 0
-        unique_vals = jnp.unique(valid_arr)
-        # Contar cuántos son realmente únicos (excluyendo el 0 artificial)
-        return jnp.sum(unique_vals > 0) + jnp.any(arr == 0).astype(jnp.int32)
+    # Mostrar primeros 10 samples válidos de cada tipo
+    forced_valid = forced_info_sets[forced_info_sets >= 0][:10]
+    normal_valid = normal_info_sets[normal_info_sets >= 0][:10]
 
-    forced_count = count_valid_unique(forced_info_sets.flatten())
-    normal_count = count_valid_unique(normal_info_sets.flatten())
+    jax.debug.print("🔍 Forced samples: {}", forced_valid)
+    jax.debug.print("🔍 Normal samples: {}", normal_valid)
 
-    jax.debug.print("🔍 Forced unique count: {}", forced_count)
-    jax.debug.print("🔍 Normal unique count: {}", normal_count)
+    # Contar total de samples válidos (esto sí funciona)
+    forced_total = jnp.sum(forced_info_sets >= 0)
+    normal_total = jnp.sum(normal_info_sets >= 0)
+
+    jax.debug.print("🔍 Forced total: {}", forced_total)
+    jax.debug.print("🔍 Normal total: {}", normal_total)
     
     flat_info_sets = batch_info_sets.reshape(-1).astype(jnp.int32)
     flat_action_values = batch_action_values.reshape(-1, config.num_actions)
