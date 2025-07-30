@@ -557,6 +557,10 @@ def _cfr_step_with_mccfr(
         )
 
     payoffs, histories, game_results_batch = jax.vmap(generate_and_play_batch)(keys)
+    
+    # Track exploration count for monitoring
+    exploration_count = jnp.sum(~jax.vmap(lambda k: jax.random.uniform(jax.random.split(k)[0]) > 0.3)(keys))
+    print(f"🔍 Exploration executions: {exploration_count}/{config.batch_size}")
 
     def process_single_game(game_idx):
         hole_cards_batch = game_results_batch['hole_cards'][game_idx]
