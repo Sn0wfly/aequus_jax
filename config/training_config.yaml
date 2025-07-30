@@ -10,7 +10,7 @@ num_iterations: 100000              # Total CFR iterations.
 batch_size: 8192            #Games per training batch (reduced for memory)
 learning_rate: 0.01                # CFR learning rate
 max_info_sets: 500000            # Maximum info sets (increased from 50,000)
-save_interval: 500000               # Save checkpoint every N iterations
+save_interval: 50000               # Save checkpoint every N iterations
 log_interval: 1000                  # Log progress every N iterations
 
 # Strategy Parameters
