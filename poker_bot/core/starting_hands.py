@@ -20,44 +20,44 @@ def classify_starting_hand(hole_cards: jnp.ndarray) -> jnp.ndarray:
     is_pair = ranks[0] == ranks[1]
     
     # PREMIUM HANDS (0.85-1.0)
-    premium_pairs = (is_pair & (high_rank >= 10))  # AA, KK, QQ, JJ
+    premium_pairs = (is_pair & (high_rank >= 9))  # AA, KK, QQ, JJ
     premium_unpaired = (
         ((high_rank == 12) & (low_rank >= 10)) |  # AK, AQ, AJ  
         ((high_rank == 11) & (low_rank >= 10))    # KQ, KJ
     )
     
     # STRONG HANDS (0.65-0.84)
-    strong_pairs = (is_pair & (high_rank >= 6) & (high_rank <= 9))  # 77-TT
+    strong_pairs = (is_pair & (high_rank >= 6) & (high_rank <= 8))  # 77-99
     strong_aces = ((high_rank == 12) & (low_rank >= 7) & (low_rank <= 9))  # AT-A9
     strong_suited = (is_suited & ((high_rank >= 9) & (low_rank >= 6)))  # Suited broadway
     
     # MEDIUM HANDS (0.35-0.64)
     medium_pairs = (is_pair & (high_rank >= 2) & (high_rank <= 5))  # 22-66
     medium_aces = ((high_rank == 12) & (low_rank >= 2) & (low_rank <= 6))  # A2-A8
-    suited_connectors = (is_suited & (high_rank - low_rank <= 4) & (low_rank >= 5))  # 65s+
+    suited_connectors = (is_suited & (high_rank - low_rank <= 4) & (low_rank >= 3))  # 65s+
     
     # WEAK HANDS (0.1-0.34)
     # Todo lo demás
     
     return jnp.where(
-        premium_pairs, 0.95,
+        premium_pairs, 0.95,  # AA, KK, QQ, JJ
         jnp.where(
-            premium_unpaired & is_suited, 0.90,
+            premium_unpaired & is_suited, 0.85,  # AKs, AQs, AJs, KQs
             jnp.where(
-                premium_unpaired, 0.85,
+                premium_unpaired, 0.80,  # AKo, AQo, AJo, KQo
                 jnp.where(
-                    strong_pairs, 0.75,
+                    strong_pairs, 0.70,  # TT, 99, 88, 77
                     jnp.where(
-                        strong_aces & is_suited, 0.70,
+                        strong_aces & is_suited, 0.65,  # ATs, A9s, A8s
                         jnp.where(
-                            strong_suited, 0.68,
+                            strong_suited, 0.60,  # Suited broadway
                             jnp.where(
-                                medium_pairs, 0.50,
+                                medium_pairs, 0.45,  # 66, 55, 44, 33, 22
                                 jnp.where(
-                                    suited_connectors, 0.45,
+                                    suited_connectors, 0.50,  # 65s, 54s, etc.
                                     jnp.where(
-                                        medium_aces, 0.35,
-                                        0.15  # Trash hands
+                                        medium_aces, 0.40,  # A7o, A6o, etc.
+                                        0.20  # Trash hands
                                     )
                                 )
                             )

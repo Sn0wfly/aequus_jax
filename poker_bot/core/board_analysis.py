@@ -142,22 +142,22 @@ def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray)
     is_pocket_pair = hole_ranks[0] == hole_ranks[1]
     is_overpair = is_pocket_pair & (hole_ranks[0] > highest_board_rank) & (num_community >= 3)
     
-    # Scoring con overpair detection
+    # Scoring con overpair detection - FIXED VALUES
     made_hand_strength = jnp.where(
-        max_rank_count >= 4, 1.0,  # Quads
+        max_rank_count >= 4, 0.98,  # Quads
         jnp.where(
             (max_rank_count >= 3) & (pairs_count >= 2), 0.95,  # Full house
             jnp.where(
-                max_suit_count >= 5, 0.9,  # Flush
+                max_suit_count >= 5, 0.90,  # Flush
                 jnp.where(
-                    max_rank_count >= 3, 0.8,  # Trips (aumentado para sets)
+                    max_rank_count >= 3, 0.85,  # Trips/Sets
                     jnp.where(
-                        pairs_count >= 2, 0.5,  # Two pair
+                        pairs_count >= 2, 0.80,  # Two pair
                         jnp.where(
-                            is_overpair, 0.75,  # *** OVERPAIR FUERTE ***
+                            is_overpair, 0.85,  # Overpair
                             jnp.where(
-                                max_rank_count >= 2, 0.3,  # Regular pair
-                                0.1  # High card
+                                max_rank_count >= 2, 0.60,  # Top pair
+                                0.25  # Overcards/High card
                             )
                         )
                     )
