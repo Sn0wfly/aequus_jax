@@ -1,11 +1,12 @@
 import jax
 import jax.numpy as jnp
+from jax import lax
 
 @jax.jit
 def optimize_bet_sizing(strategy: jnp.ndarray, hole_cards: jnp.ndarray, 
-                       community_cards: jnp.ndarray, pot_size: jnp.ndarray) -> str:
+                       community_cards: jnp.ndarray, pot_size: jnp.ndarray) -> jnp.ndarray:
     """
-    Convert strategy probabilities to optimal action with dynamic sizing.
+    Convert strategy probabilities to optimal action index with dynamic sizing.
     
     Args:
         strategy: [9] adjusted strategy probabilities  
@@ -14,7 +15,7 @@ def optimize_bet_sizing(strategy: jnp.ndarray, hole_cards: jnp.ndarray,
         pot_size: current pot size
         
     Returns:
-        optimal_action: best action string
+        optimal_action_idx: best action index (0-8)
     """
     from .starting_hands import classify_starting_hand
     from .board_analysis import analyze_board_texture
@@ -23,46 +24,47 @@ def optimize_bet_sizing(strategy: jnp.ndarray, hole_cards: jnp.ndarray,
     board_wetness = analyze_board_texture(community_cards)
     
     # Sample action from strategy
-    action_idx = jnp.argmax(strategy)
-    
-    actions = ["FOLD", "CHECK", "CALL", "BET_SMALL", "BET_MED", "BET_LARGE", 
-               "RAISE_SMALL", "RAISE_MED", "ALL_IN"]
+    base_action_idx = jnp.argmax(strategy)
     
     # Dynamic sizing logic for betting actions
-    def optimize_bet_action(base_action):
-        # Strong hands on dry boards -> larger bets
-        # Bluffs on wet boards -> larger bets  
-        # Medium hands -> smaller bets
+    is_value_bet = hand_strength > 0.6
+    is_bluff = hand_strength < 0.3
+    
+    # Size adjustments based on situation
+    should_size_up = (is_value_bet & (board_wetness < 0.4)) | (is_bluff & (board_wetness > 0.6))
+    should_size_down = (hand_strength >= 0.3) & (hand_strength <= 0.6)
+    
+    # Action mapping with sizing adjustments
+    # 0: FOLD, 1: CHECK, 2: CALL, 3: BET_SMALL, 4: BET_MED, 5: BET_LARGE, 6: RAISE_SMALL, 7: RAISE_MED, 8: ALL_IN
+    
+    def adjust_action(action_idx):
+        # If it's a betting action (3-5), apply sizing
+        is_bet_action = (action_idx >= 3) & (action_idx <= 5)
+        is_raise_action = (action_idx >= 6) & (action_idx <= 7)
         
-        is_value_bet = hand_strength > 0.6
-        is_bluff = hand_strength < 0.3
-        
-        size_multiplier = jnp.where(
-            is_value_bet & (board_wetness < 0.4), 1.5,  # Large value bet on dry board
-            jnp.where(
-                is_bluff & (board_wetness > 0.6), 1.3,   # Large bluff on wet board
-                jnp.where(
-                    (hand_strength >= 0.3) & (hand_strength <= 0.6), 0.7, 1.0  # Small bet with medium hands
-                )
-            )
+        # For betting actions
+        adjusted_bet = jnp.where(
+            should_size_up, 5,  # BET_LARGE
+            jnp.where(should_size_down, 3, action_idx)  # BET_SMALL or keep original
         )
         
+        # For raising actions  
+        adjusted_raise = jnp.where(
+            should_size_up, 7,  # RAISE_MED
+            jnp.where(should_size_down, 6, action_idx)  # RAISE_SMALL or keep original
+        )
+        
+        # Return adjusted action
         return jnp.where(
-            size_multiplier > 1.2, "BET_LARGE",
-            jnp.where(size_multiplier < 0.8, "BET_SMALL", base_action)
+            is_bet_action, adjusted_bet,
+            jnp.where(is_raise_action, adjusted_raise, action_idx)
         )
     
-    base_action = actions[action_idx]
-    
-    # Apply dynamic sizing to betting actions
-    final_action = jnp.where(
-        (action_idx >= 3) & (action_idx <= 5),  # BET actions
-        optimize_bet_action(base_action),
-        jnp.where(
-            (action_idx >= 6) & (action_idx <= 7),  # RAISE actions  
-            optimize_bet_action(base_action.replace("BET", "RAISE")),
-            base_action
-        )
-    )
-    
-    return final_action 
+    final_action_idx = adjust_action(base_action_idx)
+    return jnp.clip(final_action_idx, 0, 8).astype(jnp.int32)
+
+def convert_action_idx_to_string(action_idx: int) -> str:
+    """Convert action index to string (NON-JIT function)."""
+    actions = ["FOLD", "CHECK", "CALL", "BET_SMALL", "BET_MED", "BET_LARGE", 
+               "RAISE_SMALL", "RAISE_MED", "ALL_IN"]
+    return actions[int(action_idx)] 

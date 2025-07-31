@@ -177,8 +177,9 @@ class PokerBot:
                 stack_adjusted = apply_stack_strategy(position_adjusted, stack_size, pot_size)
                 
                 # 3. Optimize bet sizing and select final action
-                from .core.dynamic_sizing import optimize_bet_sizing
-                final_action = optimize_bet_sizing(stack_adjusted, hole_cards, comm_cards, pot_size)
+                from .core.dynamic_sizing import optimize_bet_sizing, convert_action_idx_to_string
+                final_action_idx = optimize_bet_sizing(stack_adjusted, hole_cards, comm_cards, pot_size)
+                final_action = convert_action_idx_to_string(int(final_action_idx))
                 
                 logger.debug(f"Enhanced decision: Info set {info_set_idx} -> {final_action}")
                 return final_action
