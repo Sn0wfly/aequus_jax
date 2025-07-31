@@ -133,94 +133,63 @@ class PokerBot:
 
     def get_action(self, game_state: dict) -> str:
         """
-        Main bot function. Given a game state, returns the best action.
-        
-        Args:
-            game_state: Dictionary containing:
-                - player_id: Current player index
-                - hole_cards: Player's hole cards [card1, card2]
-                - community_cards: Community cards [c1, c2, c3, c4, c5]
-                - pot_size: Current pot size
-                - position: Player position (0-5)
-                
-        Returns:
-            Best action as string: "FOLD", "CHECK", "CALL", "BET", "RAISE", "ALL_IN"
+        ENHANCED: Professional-level decision making with position, stack, and sizing awareness.
         """
         try:
-            # Extract data directly for bucketing system
+            # Extract game state (keep existing extraction logic)
             player_id = game_state.get('player_id', 0)
-            
-            # Get hole cards
             hole_cards = game_state.get('hole_cards', [0, 1])
             if isinstance(hole_cards, list):
                 hole_cards = jnp.array(hole_cards, dtype=jnp.int8)
             
-            # Get community cards
             comm_cards = game_state.get('community_cards', [-1, -1, -1, -1, -1])
             if isinstance(comm_cards, list):
                 comm_cards = jnp.array(comm_cards, dtype=jnp.int8)
             
-            # Ensure community cards are correct length
             if len(comm_cards) < 5:
-                comm_cards = jnp.pad(comm_cards, (0, 5 - len(comm_cards)), 
-                                   constant_values=-1)
+                comm_cards = jnp.pad(comm_cards, (0, 5 - len(comm_cards)), constant_values=-1)
             elif len(comm_cards) > 5:
                 comm_cards = comm_cards[:5]
             
-            # Get pot size
             pot_size = jnp.array([game_state.get('pot_size', 50.0)])
+            stack_size = jnp.array([game_state.get('stack_size', 1000.0)])  # NEW: get stack size
+            position = game_state.get('position', 2)  # NEW: get position
             
-            # DEBUG: Print hand evaluation
+            # DEBUG: Keep existing hand strength display
             hand_strength = _evaluate_7card_simple_bot(hole_cards, comm_cards)
             print(f"Hand strength: {hand_strength:.3f}, Cards: {hole_cards}, Community: {comm_cards}")
 
-            # Get info set using new bucketing system  
+            # Get base strategy from trained model (keep existing logic)
             info_set_idx = compute_info_set_id(hole_cards, comm_cards, player_id, pot_size)
-            
-            # Convert to Python int
             info_set_idx = int(info_set_idx)
             
-            # Check if info set is valid and within strategy bounds
-            if (info_set_idx >= 0 and 
-                info_set_idx < self.strategy.shape[0] and 
-                self.strategy.shape[1] >= 6):
+            if (info_set_idx >= 0 and info_set_idx < self.strategy.shape[0] and self.strategy.shape[1] >= 6):
                 
-                # Get strategy for this info set
-                strategy_probs = self.strategy[info_set_idx]
-                # 9 acciones - MATCHING el modelo entrenado
-                actions = [
-                    "FOLD", "CHECK", "CALL", "BET_SMALL", "BET_MED", "BET_LARGE",
-                    "RAISE_SMALL", "RAISE_MED", "ALL_IN"
-                ]
+                # *** NEW PROFESSIONAL ENHANCEMENTS ***
+                base_strategy = self.strategy[info_set_idx]
                 
-                # Asegurar que las probabilidades sean válidas para el muestreo
-                strategy_probs = np.maximum(strategy_probs, 0)  # Prevenir probabilidades negativas
-                prob_sum = np.sum(strategy_probs)
+                # 1. Apply position adjustments
+                from .core.position_advisor import apply_position_multipliers
+                position_adjusted = apply_position_multipliers(base_strategy, position, hole_cards)
                 
-                if prob_sum > 1e-6:  # Usar un umbral pequeño para estabilidad
-                    strategy_probs = strategy_probs / prob_sum
-                else:
-                    # Si la suma es cero (un caso raro), fallback a una estrategia uniforme
-                    num_actions = len(actions)
-                    strategy_probs = np.ones(num_actions) / num_actions
+                # 2. Apply stack depth adjustments  
+                from .core.stack_advisor import apply_stack_strategy
+                stack_adjusted = apply_stack_strategy(position_adjusted, stack_size, pot_size)
                 
-                # Asegurar arrays mismo tamaño
-                actions = actions[:len(strategy_probs)]
-                # INVERTIR: tomar la acción con MENOR probabilidad (regrets más bajos)
-                inverted_probs = 1.0 - strategy_probs
-                inverted_probs = inverted_probs / np.sum(inverted_probs)
-                selected_action = np.random.choice(actions, p=strategy_probs)
+                # 3. Optimize bet sizing and select final action
+                from .core.dynamic_sizing import optimize_bet_sizing
+                final_action = optimize_bet_sizing(stack_adjusted, hole_cards, comm_cards, pot_size)
                 
-                logger.debug(f"Info set {info_set_idx}: Strategy={np.round(strategy_probs, 2)} -> Sampled Action: {selected_action}")
-                return selected_action
+                logger.debug(f"Enhanced decision: Info set {info_set_idx} -> {final_action}")
+                return final_action
                 
             else:
                 logger.warning(f"Invalid info set {info_set_idx}, using default action")
                 return "CHECK"
                 
         except Exception as e:
-            logger.error(f"Error in get_action: {e}")
-            return "CHECK"  # Safe default
+            logger.error(f"Error in enhanced get_action: {e}")
+            return "CHECK"
 
 # _convert_to_mock_game_state removed - no longer needed with direct array passing
 
