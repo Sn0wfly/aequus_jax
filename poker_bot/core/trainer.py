@@ -110,8 +110,10 @@ def _compute_hand_strength_fixed_size(all_cards: jnp.ndarray, valid_mask: jnp.nd
     
     # Acumular conteos usando scatter_add
     for i in range(7):  # Procesar las 7 posiciones
-        rank_counts = rank_counts.at[ranks[i]].add(jnp.where(valid_mask[i], 1, 0))
-        suit_counts = suit_counts.at[suits[i]].add(jnp.where(valid_mask[i], 1, 0))
+        rank_idx = ranks[i].astype(jnp.int32)
+        suit_idx = suits[i].astype(jnp.int32)
+        rank_counts = rank_counts.at[rank_idx].add(jnp.where(valid_mask[i], 1, 0))
+        suit_counts = suit_counts.at[suit_idx].add(jnp.where(valid_mask[i], 1, 0))
     
     # Analizar mano
     max_rank_count = jnp.max(rank_counts)

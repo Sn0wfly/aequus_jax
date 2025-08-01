@@ -21,7 +21,7 @@ def analyze_board_texture(community_cards: jnp.ndarray) -> jnp.ndarray:
         suit_counts = jnp.zeros(4, dtype=jnp.int32)
         for i in range(5):
              card_is_valid = valid_cards[i] >= 0
-             suit = valid_cards[i] % 4
+             suit = (valid_cards[i] % 4).astype(jnp.int32)
              suit_counts = suit_counts.at[suit].add(jnp.where(card_is_valid, 1, 0))
         
         max_suit_count = jnp.max(suit_counts)
@@ -44,7 +44,7 @@ def analyze_board_texture(community_cards: jnp.ndarray) -> jnp.ndarray:
         rank_counts = jnp.zeros(13, dtype=jnp.int32)
         for i in range(5):
             card_is_valid = valid_cards[i] >= 0
-            rank = valid_cards[i] // 4
+            rank = (valid_cards[i] // 4).astype(jnp.int32)
             rank_counts = rank_counts.at[rank].add(jnp.where(card_is_valid, 1, 0))
 
         is_paired = jnp.any(rank_counts > 1)
@@ -101,8 +101,8 @@ def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray)
     hole_suits = hole_cards % 4
     
     for i in range(2):
-        rank = hole_ranks[i]
-        suit = hole_suits[i]
+        rank = hole_ranks[i].astype(jnp.int32)
+        suit = hole_suits[i].astype(jnp.int32)
         all_rank_counts = all_rank_counts.at[rank].add(1)
         all_suit_counts = all_suit_counts.at[suit].add(1)
     
@@ -112,8 +112,8 @@ def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray)
     
     for i in range(5):
         valid_card = jnp.where(i < max_community, community_cards[i], -1)
-        rank = jnp.where(valid_card >= 0, valid_card // 4, 0)
-        suit = jnp.where(valid_card >= 0, valid_card % 4, 0)
+        rank = jnp.where(valid_card >= 0, valid_card // 4, 0).astype(jnp.int32)
+        suit = jnp.where(valid_card >= 0, valid_card % 4, 0).astype(jnp.int32)
         
         # Track highest board rank (compatible with JIT)
         highest_board_rank = jnp.where(
