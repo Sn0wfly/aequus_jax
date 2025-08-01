@@ -171,7 +171,8 @@ class PokerBot:
                 
                 # 1. Apply position adjustments
                 from .core.position_advisor import apply_position_multipliers
-                position_adjusted = apply_position_multipliers(base_strategy, position, hole_cards)
+                #position_adjusted = apply_position_multipliers(base_strategy, position, hole_cards)
+                position_adjusted = base_strategy  # Use pure CFR strategy
                 print(f"🔍 Position adjusted: {position_adjusted}")
                 
                 # 2. Apply stack depth adjustments  
