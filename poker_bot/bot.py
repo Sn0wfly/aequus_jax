@@ -136,7 +136,7 @@ class PokerBot:
         ENHANCED: Professional-level decision making with position, stack, and sizing awareness.
         """
         try:
-            # Extract game state (keep existing extraction logic)
+            # Extract game state (keep existing extraction logic).
             player_id = game_state.get('player_id', 0)
             hole_cards = game_state.get('hole_cards', [0, 1])
             if isinstance(hole_cards, list):
