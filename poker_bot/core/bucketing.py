@@ -542,18 +542,18 @@ def compute_info_set_id_enhanced(hole_cards: jnp.ndarray, community_cards: jnp.n
     # DIMENSION 4: Position (6 positions: 0-5)
     position_bucket = jnp.clip(player_idx, 0, 5)
     
-    # DIMENSIONAL SEPARATION: Each dimension gets its own space
-    # No overlaps possible by mathematical design
+    # FIXED: Simple hash function for better distribution
+    # Use prime-based hashing to avoid collisions
     combined_id = (
-        hand_bucket * 100_000 +      # Slots 0-132,600,000
-        board_bucket * 200 +         # Slots within hand bucket  
-        stack_bucket * 10 +          # Slots within board bucket
-        position_bucket              # Final position slot
+        hand_bucket * 1009 +      # Prime number multiplier
+        board_bucket * 101 +      # Prime number multiplier  
+        stack_bucket * 11 +       # Prime number multiplier
+        position_bucket           # No multiplier needed
     )
     
-    # Ensure within bounds
+    # Use modulo to fit within max_info_sets
     final_id = combined_id % max_info_sets
-    return jnp.clip(final_id, 0, max_info_sets - 1).astype(jnp.int32)
+    return final_id.astype(jnp.int32)
 
 @jax.jit
 def _compute_detailed_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
