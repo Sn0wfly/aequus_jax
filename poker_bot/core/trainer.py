@@ -293,6 +293,21 @@ class PokerTrainer:
                 self.regrets, self.strategy, iter_key, self.config, self.iteration,
                 self.lut_keys, self.lut_values, self.lut_table_size
             )
+            
+            # 🔍 BUCKETING COLLISION DEBUG - CRÍTICO
+            if i % 1000 == 0:  # Solo cada 1000 iterations
+                # Get a sample of info sets from the regrets array
+                sample_size = min(1000, len(self.regrets))
+                sample_info_sets = jnp.arange(sample_size)  # Use indices as proxy
+                min_info_set = jnp.min(sample_info_sets)
+                max_info_set = jnp.max(sample_info_sets) 
+                info_set_range = max_info_set - min_info_set
+                
+                print(f"🔍 BATCH DEBUG Iter {i}:")
+                print(f"   sample_info_sets: {sample_size}")  
+                print(f"   info_set_range: {min_info_set} to {max_info_set} (span: {info_set_range})")
+                print(f"   info_set_density: {sample_size / (info_set_range + 1):.2f} sets per ID")
+            
             # Update MCCFRTrainer with new values (outside JIT)
             self.mccfr_trainer.regrets = self.regrets
             self.mccfr_trainer.strategy = self.strategy
@@ -603,6 +618,8 @@ def _cfr_step_with_mccfr(
     
     flat_info_sets = batch_info_sets.reshape(-1).astype(jnp.int32)
     flat_action_values = batch_action_values.reshape(-1, config.num_actions)
+
+    # 🔍 BUCKETING COLLISION DEBUG - MOVED TO train() method
 
     from .mccfr_algorithm import mc_sampling_strategy, cfr_iteration
     game_key = jax.random.fold_in(key, iteration)
