@@ -316,7 +316,18 @@ def _compute_action_history_bucket(action_history: jnp.ndarray) -> jnp.ndarray:
         return jnp.int32(0)
     
     # Take last few actions and create a simple hash
-    recent_actions = action_history[-3:]  # Last 3 actions
+    # Use static indexing for JAX compatibility
+    # Get the last 3 actions using static indices
+    action_len = action_history.shape[0]
+    
+    # Create mask for valid actions (last 3 if available)
+    valid_mask = jnp.arange(action_len) >= jnp.maximum(0, action_len - 3)
+    
+    # Extract last 3 actions using mask
+    masked_actions = jnp.where(valid_mask, action_history, 0)
+    
+    # Take first 3 elements (padded with zeros if needed)
+    recent_actions = masked_actions[:3]
     valid_actions = jnp.where(recent_actions >= 0, recent_actions, 0)
     
     # Create hash from action sequence
@@ -598,7 +609,11 @@ def _compute_board_abstraction(community_cards: jnp.ndarray) -> jnp.ndarray:
         trips_on_board = jnp.sum(rank_counts >= 3)
         
         # Calculate connectedness (simplified)
-        connectedness = jnp.int32(jnp.std(ranks[:num_community]) < 3.0)
+        # Use mask instead of dynamic slicing for JAX compatibility
+        valid_ranks_mask = jnp.arange(5) < num_community
+        valid_ranks = jnp.where(valid_ranks_mask, ranks, 0)
+        # Calculate std only on valid ranks using where parameter
+        connectedness = jnp.int32(jnp.std(valid_ranks, where=valid_ranks_mask) < 3.0)
         
         # Combine features into bucket
         texture_id = (
