@@ -338,6 +338,17 @@ class PokerTrainer:
         uniform_entropy = jnp.log(self.config.num_actions)  # ln(9) ≈ 2.197
         is_trained = jnp.abs(entropies - uniform_entropy) > 0.05  # Threshold for "different from uniform"
         
+        # 🔍 DEBUG PRINTS - REMOVE AFTER DIAGNOSIS
+        print(f"🔍 Debug - uniform_entropy: {uniform_entropy:.6f}")
+        print(f"🔍 Debug - entropies mean: {jnp.mean(entropies):.6f}")
+        print(f"🔍 Debug - entropies min: {jnp.min(entropies):.6f}")
+        print(f"🔍 Debug - entropies max: {jnp.max(entropies):.6f}")
+        print(f"🔍 Debug - diff mean: {jnp.mean(jnp.abs(entropies - uniform_entropy)):.6f}")
+        print(f"🔍 Debug - diff max: {jnp.max(jnp.abs(entropies - uniform_entropy)):.6f}")
+        print(f"🔍 Debug - is_trained sum: {jnp.sum(is_trained)}")
+        print(f"🔍 Debug - strategy mean: {jnp.mean(self.strategy):.6f}")
+        print(f"🔍 Debug - strategy std: {jnp.std(self.strategy):.6f}")
+        
         return {
             'overall_entropy': float(jnp.mean(entropies)),
             'trained_info_sets': int(jnp.sum(is_trained)),
