@@ -7,7 +7,7 @@
 
 # CFR Training Settings
 num_iterations: 1000000             # Total CFR iterations (professional level).
-batch_size: 2048             #Games per training batch (optimized for vast.ai 24GB VRAM)
+batch_size: 1024              #Games per training batch (optimized for local PC)
 learning_rate: 0.005                # CFR learning rate
 max_info_sets: 100000000          # Maximum info sets (elite NLHE 6-max)
 save_interval: 25000               # Save checkpoint every N iterations
@@ -87,8 +87,8 @@ pot_to_stack_ratio_buckets: 5      # Pot-to-stack ratio categories
 
 # JAX Configuration
 jit_compile: true                  # Enable JIT compilation
-use_mixed_precision: true         # Use bfloat16 for speed (experimental)
-memory_fraction: 0.85              # GPU memory fraction to use (optimized for vast.ai)
+use_mixed_precision: false         # Disable mixed precision for CPU
+memory_fraction: 0.50              # GPU memory fraction to use (CPU compatible)
 
 # Memory Management
 enable_checkpointing: true         # Enable gradient checkpointing
