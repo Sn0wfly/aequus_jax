@@ -619,7 +619,29 @@ def _cfr_step_with_mccfr(
     flat_info_sets = batch_info_sets.reshape(-1).astype(jnp.int32)
     flat_action_values = batch_action_values.reshape(-1, config.num_actions)
 
-    # 🔍 BUCKETING COLLISION DEBUG - MOVED TO train() method
+    # 🔍 BUCKETING COLLISION DEBUG - CRÍTICO
+    def debug_bucketing():
+        unique_info_sets = len(jnp.unique(flat_info_sets))
+        min_info_set = jnp.min(flat_info_sets)
+        max_info_set = jnp.max(flat_info_sets) 
+        info_set_range = max_info_set - min_info_set
+        
+        print(f"🔍 BATCH DEBUG Iter {iteration}:")
+        print(f"   unique_info_sets_this_batch: {unique_info_sets}")
+        print(f"   total_flat_info_sets: {len(flat_info_sets)}")  
+        print(f"   collision_rate: {(len(flat_info_sets) - unique_info_sets) / len(flat_info_sets) * 100:.1f}%")
+        print(f"   info_set_range: {min_info_set} to {max_info_set} (span: {info_set_range})")
+        return None
+    
+    def no_debug():
+        return None
+    
+    # Use lax.cond for JIT compatibility
+    lax.cond(
+        iteration % 1000 == 0,
+        debug_bucketing,
+        no_debug
+    )
 
     from .mccfr_algorithm import mc_sampling_strategy, cfr_iteration
     game_key = jax.random.fold_in(key, iteration)
