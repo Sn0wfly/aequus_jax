@@ -547,21 +547,20 @@ def compute_info_set_id_enhanced(hole_cards: jnp.ndarray, community_cards: jnp.n
     num_community = jnp.sum(community_cards >= 0)
     
     def preflop_hash():
-        # Simple hash for preflop (works well)
+        # Simple hash for preflop with better distribution
         return (
-            hand_bucket * 10007 +
-            stack_bucket * 101 +
-            position_bucket * 11
+            hand_bucket * 1009 +      # Smaller prime
+            stack_bucket * 101 +      # Medium prime
+            position_bucket * 11      # Small prime
         )
     
     def postflop_hash():
         # Complex hash for postflop with better distribution
-        # Use board texture and hand strength more prominently
         return (
-            hand_bucket * 100003 +
-            board_bucket * 10007 +
-            stack_bucket * 1009 +
-            position_bucket * 101
+            hand_bucket * 10007 +     # Larger prime for hand
+            board_bucket * 1009 +     # Medium prime for board
+            stack_bucket * 101 +      # Small prime for stack
+            position_bucket * 11      # Smallest prime for position
         )
     
     combined_id = lax.cond(
@@ -581,12 +580,14 @@ def _compute_detailed_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.
     """
     num_community = jnp.sum(community_cards >= 0)
     
-    # Preflop: Use detailed card combination
+    # Preflop: Use detailed card combination with better hash
     def preflop_bucket():
         card1, card2 = hole_cards[0], hole_cards[1]
         # Sort for consistency
         sorted_cards = jnp.where(card1 < card2, jnp.array([card1, card2]), jnp.array([card2, card1]))
-        return sorted_cards[0] * 52 + sorted_cards[1]  # 0-2703 range
+        # Use a better hash function that distributes more evenly
+        # Formula: (card1 * 53 + card2) % 1326 to get 0-1325 range
+        return (sorted_cards[0] * 53 + sorted_cards[1]) % 1326
     
     # Postflop: Use hand strength + texture
     def postflop_bucket():
