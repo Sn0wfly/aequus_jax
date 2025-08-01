@@ -294,19 +294,7 @@ class PokerTrainer:
                 self.lut_keys, self.lut_values, self.lut_table_size
             )
             
-            # 🔍 BUCKETING COLLISION DEBUG - CRÍTICO
-            if i % 1000 == 0:  # Solo cada 1000 iterations
-                # Get a sample of info sets from the regrets array
-                sample_size = min(1000, len(self.regrets))
-                sample_info_sets = jnp.arange(sample_size)  # Use indices as proxy
-                min_info_set = jnp.min(sample_info_sets)
-                max_info_set = jnp.max(sample_info_sets) 
-                info_set_range = max_info_set - min_info_set
-                
-                print(f"🔍 BATCH DEBUG Iter {i}:")
-                print(f"   sample_info_sets: {sample_size}")  
-                print(f"   info_set_range: {min_info_set} to {max_info_set} (span: {info_set_range})")
-                print(f"   info_set_density: {sample_size / (info_set_range + 1):.2f} sets per ID")
+
             
             # Update MCCFRTrainer with new values (outside JIT)
             self.mccfr_trainer.regrets = self.regrets
@@ -353,16 +341,7 @@ class PokerTrainer:
         uniform_entropy = jnp.log(self.config.num_actions)  # ln(9) ≈ 2.197
         is_trained = jnp.abs(entropies - uniform_entropy) > 0.05  # Threshold for "different from uniform"
         
-        # 🔍 DEBUG PRINTS - REMOVE AFTER DIAGNOSIS
-        print(f"🔍 Debug - uniform_entropy: {uniform_entropy:.6f}")
-        print(f"🔍 Debug - entropies mean: {jnp.mean(entropies):.6f}")
-        print(f"🔍 Debug - entropies min: {jnp.min(entropies):.6f}")
-        print(f"🔍 Debug - entropies max: {jnp.max(entropies):.6f}")
-        print(f"🔍 Debug - diff mean: {jnp.mean(jnp.abs(entropies - uniform_entropy)):.6f}")
-        print(f"🔍 Debug - diff max: {jnp.max(jnp.abs(entropies - uniform_entropy)):.6f}")
-        print(f"🔍 Debug - is_trained sum: {jnp.sum(is_trained)}")
-        print(f"🔍 Debug - strategy mean: {jnp.mean(self.strategy):.6f}")
-        print(f"🔍 Debug - strategy std: {jnp.std(self.strategy):.6f}")
+
         
         return {
             'overall_entropy': float(jnp.mean(entropies)),
@@ -619,18 +598,29 @@ def _cfr_step_with_mccfr(
     flat_info_sets = batch_info_sets.reshape(-1).astype(jnp.int32)
     flat_action_values = batch_action_values.reshape(-1, config.num_actions)
 
-    # 🔍 BUCKETING COLLISION DEBUG - CRÍTICO
+    # 🔍 BUCKETING COLLISION DEBUG - CRÍTICO (JIT-compatible)
     def debug_bucketing():
-        unique_info_sets = len(jnp.unique(flat_info_sets))
+        # JIT-compatible debugging using jax.debug.print
         min_info_set = jnp.min(flat_info_sets)
-        max_info_set = jnp.max(flat_info_sets) 
+        max_info_set = jnp.max(flat_info_sets)
         info_set_range = max_info_set - min_info_set
+        mean_info_set = jnp.mean(flat_info_sets.astype(jnp.float32))
+        std_info_set = jnp.std(flat_info_sets.astype(jnp.float32))
         
-        print(f"🔍 BATCH DEBUG Iter {iteration}:")
-        print(f"   unique_info_sets_this_batch: {unique_info_sets}")
-        print(f"   total_flat_info_sets: {len(flat_info_sets)}")  
-        print(f"   collision_rate: {(len(flat_info_sets) - unique_info_sets) / len(flat_info_sets) * 100:.1f}%")
-        print(f"   info_set_range: {min_info_set} to {max_info_set} (span: {info_set_range})")
+        # Count how many different values we see (approximate diversity)
+        sorted_sets = jnp.sort(flat_info_sets)
+        differences = jnp.diff(sorted_sets)  
+        num_changes = jnp.sum(differences > 0)  # Approximate unique count
+        
+        jax.debug.print("🔍 BATCH DEBUG Iter {iter}:", iter=iteration)
+        jax.debug.print("   total_flat_info_sets: {total}", total=len(flat_info_sets))
+        jax.debug.print("   approx_unique_sets: {unique}", unique=num_changes + 1)
+        jax.debug.print("   info_set_range: {min} to {max} (span: {span})", 
+                         min=min_info_set, max=max_info_set, span=info_set_range)
+        jax.debug.print("   mean_info_set: {mean:.1f}, std: {std:.1f}", 
+                         mean=mean_info_set, std=std_info_set)
+        jax.debug.print("   approx_collision_rate: {rate:.1f}%", 
+                         rate=(len(flat_info_sets) - num_changes - 1) / len(flat_info_sets) * 100)
         return None
     
     def no_debug():
