@@ -743,8 +743,8 @@ def validate_professional_bucketing():
         
         # Random position, stack, pot
         position = random.randint(subkeys[2], (), 0, 6)
-        stack_size = random.uniform(subkeys[3], (), 50.0, 2000.0)
-        pot_size = random.uniform(subkeys[4], (), 10.0, 500.0)
+        stack_size = random.uniform(subkeys[3], (), minval=50.0, maxval=2000.0)
+        pot_size = random.uniform(subkeys[4], (), minval=10.0, maxval=500.0)
         
         info_set_id = compute_info_set_id_enhanced(
             hole_cards, community_cards, position, 
