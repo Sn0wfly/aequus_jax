@@ -562,6 +562,9 @@ def _cfr_step_with_mccfr(
         hole_cards_batch = game_results_batch['hole_cards'][game_idx]
         community_cards = game_results_batch['final_community'][game_idx]
         pot_size = jnp.squeeze(game_results_batch['final_pot'][game_idx])
+        
+        # EXTRACT REAL STACK SIZES
+        player_stacks = game_results_batch['player_stacks'][game_idx]  # Get actual stacks
 
         def calculate_action_values_for_player(p_idx):
             hole = hole_cards_batch[p_idx]
@@ -577,11 +580,11 @@ def _cfr_step_with_mccfr(
         pot_size_broadcast = jnp.full(6, pot_size)
         
         info_set_indices = jax.vmap(
-            lambda hole_cards, player_idx, pot: compute_info_set_id(
+            lambda hole_cards, player_idx, pot, stack: compute_info_set_id(
                 hole_cards, community_cards, player_idx, jnp.array([pot]), 
-                stack_size=jnp.array([1000.0]), max_info_sets=config.max_info_sets
+                stack_size=jnp.array([stack]), max_info_sets=config.max_info_sets  # ← FIXED
             )
-        )(hole_cards_batch, player_indices, pot_size_broadcast)
+        )(hole_cards_batch, player_indices, pot_size_broadcast, player_stacks)
         
         return info_set_indices, action_values
 

@@ -62,13 +62,21 @@ def compute_info_set_id(hole_cards: jnp.ndarray, community_cards: jnp.ndarray,
         jnp.int32(0)
     )
     
-    # 5. Combinar todos los componentes en un hash más robusto
+    # 5. Componente del Stack Size (¡NUEVO!)
+    stack_component = jnp.where(
+        stack_size is not None,
+        jnp.clip(jnp.int32(stack_size[0] / 50.0), 0, 99),
+        jnp.int32(0)
+    )
+    
+    # 6. Combinar todos los componentes en un hash más robusto
     # Usamos multiplicadores primos para minimizar colisiones
     combined_hash = (
         jnp.int32(hand_strength * 1000) * 1 +
         jnp.int32(board_texture * 100)  * 31 +
         position_component * 67 +
-        pot_component * 101
+        pot_component * 101 +
+        stack_component * 137  # Nuevo multiplicador primo
     )
     
     # El ID final es el hash módulo el tamaño de la tabla
