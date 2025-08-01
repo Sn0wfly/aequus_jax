@@ -167,18 +167,22 @@ class PokerBot:
                 
                 # *** NEW PROFESSIONAL ENHANCEMENTS ***
                 base_strategy = self.strategy[info_set_idx]
+                print(f"🔍 Base strategy: {base_strategy}")
                 
                 # 1. Apply position adjustments
                 from .core.position_advisor import apply_position_multipliers
                 position_adjusted = apply_position_multipliers(base_strategy, position, hole_cards)
+                print(f"🔍 Position adjusted: {position_adjusted}")
                 
                 # 2. Apply stack depth adjustments  
                 from .core.stack_advisor import apply_stack_strategy
                 stack_adjusted = apply_stack_strategy(position_adjusted, stack_size, pot_size)
+                print(f"🔍 Stack adjusted: {stack_adjusted}")
                 
                 # 3. Optimize bet sizing and select final action
                 from .core.dynamic_sizing import optimize_bet_sizing, convert_action_idx_to_string
                 final_action_idx = optimize_bet_sizing(stack_adjusted, hole_cards, comm_cards, pot_size)
+                print(f"🔍 Final action idx: {final_action_idx}")
                 final_action = convert_action_idx_to_string(int(final_action_idx))
                 
                 logger.debug(f"Enhanced decision: Info set {info_set_idx} -> {final_action}")
