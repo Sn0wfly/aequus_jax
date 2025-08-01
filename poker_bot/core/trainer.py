@@ -336,7 +336,7 @@ class PokerTrainer:
         
         # Find which info sets have non-uniform strategies (been trained)
         uniform_entropy = jnp.log(self.config.num_actions)  # ln(9) ≈ 2.197
-        is_trained = jnp.abs(entropies - uniform_entropy) > 0.01  # Threshold for "different from uniform"
+        is_trained = jnp.abs(entropies - uniform_entropy) > 0.05  # Threshold for "different from uniform"
         
         return {
             'overall_entropy': float(jnp.mean(entropies)),
