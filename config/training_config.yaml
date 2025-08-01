@@ -6,10 +6,10 @@
 # ==============================================================================
 
 # CFR Training Settings
-num_iterations: 500000              # Total CFR iterations.
+num_iterations: 1000000             # Total CFR iterations (professional level).
 batch_size: 4096             #Games per training batch (reduced for better bucketing diversity)
 learning_rate: 0.005                # CFR learning rate
-max_info_sets: 1000000            # Maximum info sets (increased from 50,000)
+max_info_sets: 100000000          # Maximum info sets (elite NLHE 6-max)
 save_interval: 25000               # Save checkpoint every N iterations
 log_interval: 10000                  # Log progress every N iterations
 
