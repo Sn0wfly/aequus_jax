@@ -628,7 +628,7 @@ def _compute_stack_category(stack_size: jnp.ndarray, pot_size: jnp.ndarray) -> j
             spr <= 1.0, 0,          # Push/fold (0-1 SPR)
             jnp.where(spr <= 3.0, 1,    # Short stack (1-3 SPR)
                       jnp.where(spr <= 8.0, 2,  # Medium (3-8 SPR) 
-                                jnp.where(spr <= 15.0, 3, 4)))  # Deep (8-15), Very deep (15+)
+                                jnp.where(spr <= 15.0, 3, 4))))  # Fixed: Added missing closing parenthesis
     
     def default_spr():
         return jnp.int32(2)  # Medium stack default
