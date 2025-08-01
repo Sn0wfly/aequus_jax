@@ -20,8 +20,8 @@ def apply_position_multipliers(base_strategy: jnp.ndarray, position: int, hole_c
     # For BTN+, allow AK, AQ, KQ (all have 0.85 strength)
     is_premium_other = jnp.where(
         position <= 2,  # MP, CO  
-        hand_strength > 0.75,  # AK (0.80) should play from MP+
-        hand_strength > 0.80   # AK, AQ, KQ (0.85) should play from BTN+
+        hand_strength >= 0.75,  # FIXED: >= instead of >
+        hand_strength >= 0.75   # FIXED: Lower threshold for BTN+
     )
     is_premium = jnp.where(position == 0, is_premium_utg, is_premium_other)
     
@@ -52,15 +52,15 @@ def apply_position_multipliers(base_strategy: jnp.ndarray, position: int, hole_c
     premium_strategy = premium_base * utg_factor
     premium_strategy = premium_strategy / jnp.sum(premium_strategy)
     
-    # Professional position factors - FINAL TIGHTENED RANGES
+    # Professional position factors - BALANCED RANGES
     position_factors = jnp.array([
         # [FOLD, CHECK, CALL, BET_SMALL, BET_MED, BET_LARGE, RAISE_SMALL, RAISE_MED, ALL_IN]
-        [8.0, 0.05, 0.05, 0.02, 0.02, 0.02, 0.02, 0.02, 0.1],  # UTG - MUCH TIGHTER (15-20%)
-        [2.5, 0.5, 0.5, 0.4, 0.4, 0.4, 0.4, 0.4, 0.6],        # MP - UNCHANGED
-        [1.8, 0.7, 0.7, 0.6, 0.6, 0.6, 0.6, 0.6, 0.8],        # CO - UNCHANGED
-        [4.0, 0.3, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2, 0.4],        # BTN - TIGHTER (35-40%)
-        [2.2, 0.6, 0.6, 0.5, 0.5, 0.5, 0.5, 0.5, 0.7],        # SB - UNCHANGED
-        [1.3, 0.8, 0.8, 0.7, 0.7, 0.7, 0.7, 0.7, 0.8]         # BB - UNCHANGED
+        [3.0, 0.3, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2, 0.4],   # UTG - TIGHT (15-20%)
+        [2.0, 0.5, 0.5, 0.4, 0.4, 0.4, 0.4, 0.4, 0.6],   # MP - MODERATE
+        [1.5, 0.7, 0.7, 0.6, 0.6, 0.6, 0.6, 0.6, 0.8],   # CO - STANDARD
+        [3.5, 0.3, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2, 0.4],   # BTN - MUCH TIGHTER (35-40%)
+        [2.2, 0.6, 0.6, 0.5, 0.5, 0.5, 0.5, 0.5, 0.7],   # SB - TIGHT
+        [1.8, 0.8, 0.8, 0.7, 0.7, 0.7, 0.7, 0.7, 0.8]    # BB - DEFENSIVE
     ])
     
     safe_position = jnp.clip(position, 0, 5)
