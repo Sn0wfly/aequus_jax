@@ -11,7 +11,7 @@ batch_size: 2048             #Games per training batch (optimized for vast.ai 24
 learning_rate: 0.005                # CFR learning rate
 max_info_sets: 500000            # Maximum info sets (reduced further to concentrate training)
 save_interval: 10000               # Save checkpoint every N iterations
-log_interval: 12000                  # Log progress every N iterations
+log_interval: 1000                  # Log progress every N iterations
 
 # Strategy Parameters
 num_actions: 9                     # FOLD, CHECK, CALL, BET_SMALL, BET_MED, BET_LARGE, RAISE_SMALL, RAISE_MED, ALL_IN
