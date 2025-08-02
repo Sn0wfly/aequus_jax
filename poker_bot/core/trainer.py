@@ -549,7 +549,8 @@ def _cfr_step_with_mccfr(
         # Desacoplamos la aleatoriedad: una llave para la decisión, otra para el juego.
         decision_key, game_key = jax.random.split(k)
         
-        do_full_game_sim = jax.random.uniform(decision_key) > 0.3
+        # FORZAR EXPLORACIÓN: 70% de las veces empezamos desde un estado diverso (turn, river, etc.)
+        do_full_game_sim = jax.random.uniform(decision_key) < 0.3
 
         return lax.cond(
             do_full_game_sim,
