@@ -15,7 +15,7 @@ from typing import Dict, Any
 
 # Import from the clean core structure
 from .core.trainer import TrainerConfig 
-from .core.bucketing import compute_info_set_id
+from .core.bucketing import compute_info_set_id_enhanced
 
 import jax
 
@@ -160,7 +160,10 @@ class PokerBot:
             print(f"Hand strength: {hand_strength:.3f}, Cards: {hole_cards}, Community: {comm_cards}")
 
             # Get base strategy from trained model (keep existing logic)
-            info_set_idx = compute_info_set_id(hole_cards, comm_cards, player_id, pot_size, stack_size)
+            info_set_idx = compute_info_set_id_enhanced(
+                hole_cards, comm_cards, player_id, pot_size, stack_size, 
+                max_info_sets=self.config.max_info_sets
+            )
             info_set_idx = int(info_set_idx)
             
             if (info_set_idx >= 0 and info_set_idx < self.strategy.shape[0] and self.strategy.shape[1] >= 9):
