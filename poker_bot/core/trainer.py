@@ -284,13 +284,19 @@ class PokerTrainer:
         """
         Train using MCCFR + CFR+ instead of broken vanilla CFR.
         """
-        logger.info(f"🚀 Starting MCCFR + CFR+ training")
-        key = jax.random.PRNGKey(42)
+        logger.info(f"🚀 Starting MCCFR + CFR+ training with robust PRNGKey handling")
+        key = jax.random.PRNGKey(int(time.time()))  # Usar el tiempo para una semilla siempre nueva
         stats = {'iterations': [], 'regret_magnitudes': [], 'strategy_entropies': [], 'training_times': []}
         start_time = time.time()
         for i in range(num_iterations):
             iter_start = time.time()
-            iter_key = jax.random.fold_in(key, i)
+            
+            # --- NUEVA LÓGICA DE ALEATORIEDAD ---
+            # En lugar de derivar, generamos una clave completamente nueva para cada iteración.
+            # Esto rompe cualquier posible correlación entre batches.
+            key, iter_key = jax.random.split(key) 
+            # ------------------------------------
+            
             self.regrets, self.strategy = _cfr_step_with_mccfr(
                 self.regrets, self.strategy, iter_key, self.config, self.iteration,
                 self.lut_keys, self.lut_values, self.lut_table_size

@@ -8,10 +8,10 @@
 # CFR Training Settings
 num_iterations: 1000000             # Total CFR iterations (professional level).
 batch_size: 2048             #Games per training batch (optimized for vast.ai 24GB VRAM)
-learning_rate: 0.005                # CFR learning rate
-max_info_sets: 5000000            # Maximum info sets (5M for dimensional stacking)
-save_interval: 250000               # Save checkpoint every N iterations
-log_interval: 10000                  # Log progress every N iterations
+learning_rate: 0.01                # CFR learning rate
+max_info_sets: 20000            # Maximum info sets (5M for dimensional stacking)
+save_interval: 5000               # Save checkpoint every N iterations
+log_interval: 1000                  # Log progress every N iterations
 
 # Strategy Parameters
 num_actions: 9                     # FOLD, CHECK, CALL, BET_SMALL, BET_MED, BET_LARGE, RAISE_SMALL, RAISE_MED, ALL_IN
