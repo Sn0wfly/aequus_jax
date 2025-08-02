@@ -587,7 +587,7 @@ def _compute_detailed_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.
         sorted_cards = jnp.where(card1 < card2, jnp.array([card1, card2]), jnp.array([card2, card1]))
         # Use a better hash function that distributes more evenly
         # Formula: (card1 * 53 + card2) % 1326 to get 0-1325 range
-        return (sorted_cards[0] * 53 + sorted_cards[1]) % 1326
+        return jnp.int32((sorted_cards[0] * 53 + sorted_cards[1]) % 1326)
     
     # Postflop: Use hand strength + texture
     def postflop_bucket():
