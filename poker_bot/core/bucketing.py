@@ -547,20 +547,20 @@ def compute_info_set_id_enhanced(hole_cards: jnp.ndarray, community_cards: jnp.n
     num_community = jnp.sum(community_cards >= 0)
     
     def preflop_hash():
-        # Optimized hash for 50M info sets - preflop
+        # Optimized hash for 5M info sets - preflop
         return (
-            hand_bucket * 1000000 +   # 1.3M range for hands
-            stack_bucket * 10000 +    # 200K range for stack
-            position_bucket * 1000    # 6K range for position
+            hand_bucket * 10000 +     # 13K range for hands
+            stack_bucket * 100 +      # 2K range for stack
+            position_bucket * 10      # 60 range for position
         )
     
     def postflop_hash():
-        # Optimized hash for 50M info sets - postflop
+        # Optimized hash for 5M info sets - postflop
         return (
-            hand_bucket * 1000000 +   # 1M range for hands
-            board_bucket * 100000 +   # 500K range for board
-            stack_bucket * 10000 +    # 200K range for stack
-            position_bucket * 1000    # 6K range for position
+            hand_bucket * 10000 +     # 10K range for hands
+            board_bucket * 1000 +     # 5K range for board
+            stack_bucket * 100 +      # 2K range for stack
+            position_bucket * 10      # 60 range for position
         )
     
     combined_id = lax.cond(
