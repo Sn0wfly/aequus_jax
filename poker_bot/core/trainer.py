@@ -576,27 +576,27 @@ def _cfr_step_with_mccfr(
 
         def calculate_action_values_for_player(p_idx):
             hole = hole_cards_batch[p_idx]
-            hand_strength = _evaluate_7card_simple(hole, community_cards, p_idx)
-            action_aggressiveness = jnp.array([-1.0, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0], dtype=jnp.float32)
+            # Usar la posición real del jugador para una evaluación de fuerza más precisa
+            position = p_idx  # Usar p_idx como posición (0-5)
+            hand_strength = _evaluate_7card_simple(hole, community_cards, position)
             
-            # FIXED: Better action value calculation that ensures weak hands fold
-            # For weak hands (< 0.5), make aggressive actions negative
-            # For strong hands (> 0.5), make aggressive actions positive
+            # Agresividad base de cada acción (mejorada)
+            action_aggressiveness = jnp.array([-1.0, 0.0, 0.2, 0.6, 1.0, 1.5, 2.0, 2.5, 4.0], dtype=jnp.float32)
+            
+            # El modificador de fuerza convierte la fuerza (0-1) a un rango (-1 a 1)
             strength_modifier = (hand_strength - 0.5) * 2.0
             
-            # Ensure weak hands prefer folding by adjusting the calculation
+            # Calcular valores base: manos fuertes hacen acciones agresivas positivas, manos débiles negativas
             values = action_aggressiveness * strength_modifier * pot_size
+
+            # Penalización adicional para manos muy débiles que intentan ser agresivas
+            # Esto acelera el aprendizaje de FOLD con basura
+            is_very_weak = hand_strength < 0.3
+            penalty_for_aggression = jnp.array([0.0, 0.0, -pot_size, -pot_size*2, -pot_size*3, -pot_size*4, -pot_size*5, -pot_size*6, -pot_size*8], dtype=jnp.float32)
             
-            # Additional penalty for weak hands on aggressive actions
-            weak_hand_penalty = jnp.where(
-                hand_strength < 0.6,  # Changed from 0.5 to 0.6
-                jnp.array([0.0, 0.0, -50.0, -100.0, -150.0, -200.0, -250.0, -300.0, -400.0], dtype=jnp.float32),  # Increased penalties
-                jnp.zeros(9, dtype=jnp.float32)
-            )
+            final_values = jnp.where(is_very_weak, values + penalty_for_aggression, values)
             
-            values = values + weak_hand_penalty
-            
-            return values
+            return final_values
 
         action_values = jax.vmap(calculate_action_values_for_player)(jnp.arange(6))
         
