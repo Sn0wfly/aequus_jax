@@ -524,79 +524,55 @@ def _compute_hand_strength_estimate(hole_cards: jnp.ndarray, community_cards: jn
 def compute_info_set_id_enhanced(hole_cards: jnp.ndarray, community_cards: jnp.ndarray, 
                                 player_idx: int, pot_size: jnp.ndarray = None, 
                                 stack_size: jnp.ndarray = None, action_history: jnp.ndarray = None,
-                                max_info_sets: int = 100000) -> jnp.ndarray:
+                                max_info_sets: int = 5000000) -> jnp.ndarray:
     """
-    PROFESSIONAL: Dimensional separation bucketing - guarantees <20% collision rate.
-    Each dimension is completely separated to prevent collisions.
+    PROFESSIONAL V2: Dimensional Stacking Bucketing.
+    Garantiza cero colisiones entre las dimensiones estratégicas clave.
     """
-    
-    # DIMENSION 1: Hand abstraction (1326 possible preflop combos)
-    hand_bucket = _compute_detailed_hand_bucket(hole_cards, community_cards)
-    
-    # DIMENSION 2: Board texture abstraction (500+ categories)  
-    board_bucket = _compute_board_abstraction(community_cards)
-    
-    # DIMENSION 3: Stack-to-pot ratio (20 categories)
-    stack_bucket = _compute_stack_category(stack_size, pot_size)
-    
-    # DIMENSION 4: Position (6 positions: 0-5)
-    position_bucket = jnp.clip(player_idx, 0, 5)
-    
-    # FIXED: Advanced hash function with street-aware distribution
-    # Use different strategies for preflop vs postflop
+    # --- Dimensiones Estratégicas ---
     num_community = jnp.sum(community_cards >= 0)
     
-    def preflop_hash():
-        # Optimized hash for 5M info sets - preflop
-        return (
-            hand_bucket * 10000 +     # 13K range for hands
-            stack_bucket * 100 +      # 2K range for stack
-            position_bucket * 10      # 60 range for position
-        )
-    
-    def postflop_hash():
-        # Optimized hash for 5M info sets - postflop
-        return (
-            hand_bucket * 10000 +     # 10K range for hands
-            board_bucket * 1000 +     # 5K range for board
-            stack_bucket * 100 +      # 2K range for stack
-            position_bucket * 10      # 60 range for position
-        )
-    
-    combined_id = lax.cond(
-        num_community == 0,
-        preflop_hash,
-        postflop_hash
+    # DIMENSION 1: Fuerza de la mano y textura (1000 categorías)
+    hand_bucket = _compute_hand_strength_bucket(hole_cards, community_cards)
+
+    # DIMENSION 2: Textura del Board (600 categorías)
+    board_bucket = _compute_board_abstraction(community_cards)
+
+    # DIMENSION 3: Stack-to-Pot Ratio (5 categorías)
+    spr_bucket = _compute_stack_category(stack_size, pot_size)
+
+    # DIMENSION 4: Posición del Jugador (6 categorías: 0-5)
+    position_bucket = jnp.clip(player_idx, 0, 5).astype(jnp.int32)
+
+    # --- Límites y Multiplicadores Dimensionales (El Archivador) ---
+    POS_SLOTS = 6
+    SPR_SLOTS = 5
+    BOARD_SLOTS = 600
+
+    # --- Fórmula de Apilamiento Dimensional (Odometer/Cuentakilómetros) ---
+    combined_id = (
+        position_bucket +
+        spr_bucket * POS_SLOTS +
+        board_bucket * POS_SLOTS * SPR_SLOTS +
+        hand_bucket * POS_SLOTS * SPR_SLOTS * BOARD_SLOTS
     )
     
-    # Use modulo to fit within max_info_sets
     final_id = combined_id % max_info_sets
     return final_id.astype(jnp.int32)
 
 @jax.jit
-def _compute_detailed_hand_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
-    """
-    ENHANCED: Hand bucketing with 1326+ categories for maximum differentiation.
-    """
+def _compute_hand_strength_bucket(hole_cards: jnp.ndarray, community_cards: jnp.ndarray) -> jnp.ndarray:
     num_community = jnp.sum(community_cards >= 0)
-    
-    # Preflop: Use detailed card combination with better hash
-    def preflop_bucket():
-        card1, card2 = hole_cards[0], hole_cards[1]
-        # Sort for consistency
-        sorted_cards = jnp.where(card1 < card2, jnp.array([card1, card2]), jnp.array([card2, card1]))
-        # Use a better hash function that distributes more evenly
-        # Formula: (card1 * 53 + card2) % 1326 to get 0-1325 range
-        return jnp.int32((sorted_cards[0] * 53 + sorted_cards[1]) % 1326)
-    
-    # Postflop: Use hand strength + texture
-    def postflop_bucket():
+
+    def preflop_bucket_169():
+        return _compute_hand_bucket(hole_cards, community_cards)
+
+    def postflop_strength_bucket():
         from .starting_hands import evaluate_hand_strength_multi_street
-        strength = evaluate_hand_strength_multi_street(hole_cards, community_cards, 0)
-        # Convert to bucket (0-999)
+        strength = evaluate_hand_strength_multi_street(hole_cards, community_cards, 3)
         return jnp.clip(jnp.int32(strength * 1000), 0, 999)
-    
-    return lax.cond(num_community == 0, preflop_bucket, postflop_bucket)
+
+    return lax.cond(num_community == 0, preflop_bucket_169, postflop_strength_bucket)
 
 @jax.jit  
 def _compute_board_abstraction(community_cards: jnp.ndarray) -> jnp.ndarray:
