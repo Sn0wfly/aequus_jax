@@ -7,7 +7,7 @@
 
 # CFR Training Settings
 num_iterations: 1000000             # Total CFR iterations (professional level).
-batch_size: 512              #Games per training batch (optimized for local PC)
+batch_size: 256              #Games per training batch (optimized for VPS GPU)
 learning_rate: 0.005                # CFR learning rate
 max_info_sets: 100000000          # Maximum info sets (elite NLHE 6-max)
 save_interval: 25000               # Save checkpoint every N iterations
@@ -87,8 +87,8 @@ pot_to_stack_ratio_buckets: 5      # Pot-to-stack ratio categories
 
 # JAX Configuration
 jit_compile: true                  # Enable JIT compilation
-use_mixed_precision: false         # Disable mixed precision for CPU
-memory_fraction: 0.50              # GPU memory fraction to use (CPU compatible)
+use_mixed_precision: false         # Disable mixed precision for VPS compatibility
+memory_fraction: 0.40              # GPU memory fraction to use (safe for VPS)
 
 # Memory Management
 enable_checkpointing: true         # Enable gradient checkpointing
