@@ -577,8 +577,24 @@ def _cfr_step_with_mccfr(
             hole = hole_cards_batch[p_idx]
             hand_strength = _evaluate_7card_simple(hole, community_cards, p_idx)
             action_aggressiveness = jnp.array([-1.0, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0], dtype=jnp.float32)
+            
+            # FIXED: Better action value calculation that ensures weak hands fold
+            # For weak hands (< 0.5), make aggressive actions negative
+            # For strong hands (> 0.5), make aggressive actions positive
             strength_modifier = (hand_strength - 0.5) * 2.0
+            
+            # Ensure weak hands prefer folding by adjusting the calculation
             values = action_aggressiveness * strength_modifier * pot_size
+            
+            # Additional penalty for weak hands on aggressive actions
+            weak_hand_penalty = jnp.where(
+                hand_strength < 0.6,  # Changed from 0.5 to 0.6
+                jnp.array([0.0, 0.0, -50.0, -100.0, -150.0, -200.0, -250.0, -300.0, -400.0], dtype=jnp.float32),  # Increased penalties
+                jnp.zeros(9, dtype=jnp.float32)
+            )
+            
+            values = values + weak_hand_penalty
+            
             return values
 
         action_values = jax.vmap(calculate_action_values_for_player)(jnp.arange(6))
@@ -599,41 +615,6 @@ def _cfr_step_with_mccfr(
     
     flat_info_sets = batch_info_sets.reshape(-1).astype(jnp.int32)
     flat_action_values = batch_action_values.reshape(-1, config.num_actions)
-
-    # 🔍 BUCKETING COLLISION DEBUG - CRÍTICO (JIT-compatible)
-    def debug_bucketing():
-        # JIT-compatible debugging using jax.debug.print
-        min_info_set = jnp.min(flat_info_sets)
-        max_info_set = jnp.max(flat_info_sets)
-        info_set_range = max_info_set - min_info_set
-        mean_info_set = jnp.mean(flat_info_sets.astype(jnp.float32))
-        std_info_set = jnp.std(flat_info_sets.astype(jnp.float32))
-        
-        # Count how many different values we see (approximate diversity)
-        sorted_sets = jnp.sort(flat_info_sets)
-        differences = jnp.diff(sorted_sets)  
-        num_changes = jnp.sum(differences > 0)  # Approximate unique count
-        
-        jax.debug.print("🔍 BATCH DEBUG Iter {iter}:", iter=iteration)
-        jax.debug.print("   total_flat_info_sets: {total}", total=len(flat_info_sets))
-        jax.debug.print("   approx_unique_sets: {unique}", unique=num_changes + 1)
-        jax.debug.print("   info_set_range: {min} to {max} (span: {span})", 
-                         min=min_info_set, max=max_info_set, span=info_set_range)
-        jax.debug.print("   mean_info_set: {mean:.1f}, std: {std:.1f}", 
-                         mean=mean_info_set, std=std_info_set)
-        jax.debug.print("   approx_collision_rate: {rate:.1f}%", 
-                         rate=(len(flat_info_sets) - num_changes - 1) / len(flat_info_sets) * 100)
-        return None
-    
-    def no_debug():
-        return None
-    
-    # Use lax.cond for JIT compatibility
-    lax.cond(
-        iteration % 1000 == 0,
-        debug_bucketing,
-        no_debug
-    )
 
     from .mccfr_algorithm import mc_sampling_strategy, cfr_iteration
     game_key = jax.random.fold_in(key, iteration)

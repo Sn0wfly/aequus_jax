@@ -1,185 +1,186 @@
-# Debug directo de action_values para verificar que se estén aplicando
+#!/usr/bin/env python3
+"""
+Debug script to understand why the bot isn't learning.
+"""
+
+import jax
 import jax.numpy as jnp
-from poker_bot.core.trainer import _compute_real_cfr_regrets, _evaluate_7card_simple
 import numpy as np
+from poker_bot.core.trainer import _evaluate_7card_simple
+from poker_bot.core.bucketing import compute_info_set_id_enhanced
+from poker_bot.core.starting_hands import classify_starting_hand, evaluate_hand_strength_multi_street
+from poker_bot.core.board_analysis import analyze_hand_vs_board
 
-print("🔍 TESTING ACTION VALUES DIRECTLY:")
-print("=" * 50)
-
-# Simular datos de entrada
-hole_cards = jnp.array([29, 6])  # Mano débil del test
-community_cards = jnp.array([34, 11, 3, 19, 41])
-player_idx = 0
-pot_size = jnp.array([50.0])
-game_payoffs = jnp.zeros(6)  # Mock payoffs
-strategy = jnp.ones((200000, 9)) / 9  # Strategy uniforme inicial
-num_actions = 9
-
-print(f"Input mano: {hole_cards}")
-print(f"Community: {community_cards}")
-
-# Llamar directamente a la función que computa regrets
-try:
-    action_regrets = _compute_real_cfr_regrets(
-        hole_cards, community_cards, player_idx, pot_size, 
-        game_payoffs, strategy, num_actions
-    )
+def test_action_values():
+    """Test action value calculation to see if it's working correctly."""
     
-    print(f"\n📊 Action Values Computados:")
-    actions = ["FOLD", "CHECK", "CALL", "BET_SMALL", "BET_MED", "BET_LARGE", "RAISE_SMALL", "RAISE_MED", "ALL_IN"]
+    # Test different hand strengths
+    test_cases = [
+        ("Strong hand", 0.8),
+        ("Medium hand", 0.5), 
+        ("Weak hand", 0.2),
+        ("Very weak hand", 0.1)
+    ]
     
-    for i, (action, regret) in enumerate(zip(actions, action_regrets)):
-        print(f"  {action:12}: {regret:8.3f}")
+    pot_size = 100.0
+    action_aggressiveness = jnp.array([-1.0, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0], dtype=jnp.float32)
     
-    print(f"\n🎯 Expectativa para mano débil (strength ~0.067):")
-    print(f"  FOLD debería ser ALTO (~+1.8)")
-    print(f"  BET_LARGE debería ser BAJO (~-0.6)")
+    print("🎯 ACTION VALUE CALCULATION TEST")
+    print("=" * 50)
     
-    fold_value = action_regrets[0]
-    bet_large_value = action_regrets[5]
-    
-    print(f"\n🚨 Verificación:")
-    print(f"  FOLD: {fold_value:.3f}")
-    print(f"  BET_LARGE: {bet_large_value:.3f}")
-    
-    if fold_value > bet_large_value and fold_value > 0.5:
-        print(f"  ✅ Action values están CORRECTOS")
-    else:
-        print(f"  ❌ Action values están INCORRECTOS!")
-        print(f"      FOLD debería > BET_LARGE y > 0.5")
-
-except Exception as e:
-    print(f"❌ Error al computar action values: {e}")
-    import traceback
-    traceback.print_exc()
-
-
-print("\n�� TESTING FLUSH HAND (Game 29):")
-print("=" * 40)
-
-# Game 29 exacto que falló
-flush_cards = jnp.array([37, 13])  # Cards from failing game
-flush_community = jnp.array([41, 31, 26, 49, 5])  # Community from failing game
-
-# Test hand strength evaluation
-try:
-    strength = _evaluate_7card_simple(flush_cards, flush_community, 0)  # position 0
-    print(f"Game 29 strength: {strength:.3f} (should be 0.750)")
-    
-    # Test action values para flush
-    flush_regrets = _compute_real_cfr_regrets(
-        flush_cards, flush_community, 0, jnp.array([50.0]), 
-        jnp.zeros(6), jnp.ones((50000, 9)) / 9, 9
-    )
-    
-    print(f"\n📊 Action Values para FLUSH:")
-    actions = ["FOLD", "CHECK", "CALL", "BET_SMALL", "BET_MED", "BET_LARGE", "RAISE_SMALL", "RAISE_MED", "ALL_IN"]
-    
-    for i, (action, regret) in enumerate(zip(actions, flush_regrets)):
-        print(f"  {action:12}: {regret:8.3f}")
-    
-    fold_regret = flush_regrets[0]
-    allin_regret = flush_regrets[8]
-    
-    print(f"\n🚨 Flush Verification:")
-    print(f"  FOLD: {fold_regret:.3f} (should be NEGATIVE)")
-    print(f"  ALL_IN: {allin_regret:.3f} (should be POSITIVE)")
-    
-    if fold_regret < 0 and allin_regret > 0:
-        print(f"  ✅ Flush action values CORRECT")
-    else:
-        print(f"  ❌ Flush action values BROKEN!")
-        print(f"      This explains the fold-flush bug!")
-
-except Exception as e:
-    print(f"❌ Error testing flush: {e}")
-    import traceback
-    traceback.print_exc()
-
-
-print("\n🔍 TESTING INFO SET COLLISION:")
-print("=" * 40)
-
-from poker_bot.core.bucketing import compute_info_set_id
-
-# Test collision between flush y mano débil
-weak_cards = jnp.array([29, 6])  # Mano débil
-flush_cards = jnp.array([37, 13])  # Flush problemático  
-community = jnp.array([41, 31, 26, 49, 5])
-pot = jnp.array([50.0])
-
-weak_info_set = compute_info_set_id(weak_cards, community, 0, pot)
-flush_info_set = compute_info_set_id(flush_cards, community, 0, pot)
-
-print(f"Weak hand info set:  {weak_info_set}")
-print(f"Flush hand info set: {flush_info_set}")
-
-if weak_info_set == flush_info_set:
-    print("❌ COLLISION DETECTED! Same info set for different hands!")
-    print("   This explains the fold-flush bug!")
-else:
-    print("✅ No collision - different info sets")
-    print("   Bug must be elsewhere...")
-
-
-print("\n🔍 TESTING STORED STRATEGY:")
-print("=" * 40)
-
-# Cargar modelo entrenado
-try:
-    import pickle
-    with open('models/constant_lr_50k.pkl', 'rb') as f:
-        model = pickle.load(f)
-    
-    strategy = model['strategy']
-    regrets = model['regrets']
-    
-    # Estrategia para flush info set
-    flush_info_set = 4015
-    flush_strategy = strategy[flush_info_set]
-    flush_regrets = regrets[flush_info_set]
-    
-    print(f"Info Set {flush_info_set} (flush) stored strategy:")
-    actions = ["FOLD", "CHECK", "CALL", "BET_SMALL", "BET_MED", "BET_LARGE", "RAISE_SMALL", "RAISE_MED", "ALL_IN"]
-    
-    for i, (action, prob, regret) in enumerate(zip(actions, flush_strategy, flush_regrets)):
-        print(f"  {action:12}: prob={prob:6.3f}, regret={regret:8.3f}")
-    
-    fold_prob = flush_strategy[0]
-    allin_prob = flush_strategy[8]
-    
-    print(f"\n🚨 Strategy Check:")
-    print(f"  FOLD prob: {fold_prob:.3f}")
-    print(f"  ALL_IN prob: {allin_prob:.3f}")
-    
-    if fold_prob > allin_prob:
-        print(f"  ❌ STORED STRATEGY IS BROKEN!")
-        print(f"      Regrets are correct but strategy is wrong!")
-    else:
-        print(f"  ✅ Stored strategy prefers ALL_IN over FOLD")
+    for hand_type, hand_strength in test_cases:
+        strength_modifier = (hand_strength - 0.5) * 2.0
+        values = action_aggressiveness * strength_modifier * pot_size
         
-    # Check if strategy is still uniform (untrained)
-    uniform_check = abs(fold_prob - 1/9) < 0.05
-    print(f"  Strategy uniform? {uniform_check} (fold_prob ≈ 0.111)")
+        print(f"\n📊 {hand_type} (strength: {hand_strength:.2f})")
+        print(f"   Strength modifier: {strength_modifier:.2f}")
+        print(f"   Action values: {values}")
+        
+        # Show which actions are preferred
+        best_action_idx = jnp.argmax(values)
+        worst_action_idx = jnp.argmin(values)
+        
+        actions = ["FOLD", "CHECK", "CALL", "BET_SMALL", "BET_MED", "BET_LARGE", "RAISE_SMALL", "RAISE_MED", "ALL_IN"]
+        print(f"   Best action: {actions[best_action_idx]} (value: {values[best_action_idx]:.2f})")
+        print(f"   Worst action: {actions[worst_action_idx]} (value: {values[worst_action_idx]:.2f})")
 
-except Exception as e:
-    print(f"❌ Error loading model: {e}")
+def test_hand_evaluation():
+    """Test hand evaluation to see if it's working correctly."""
+    
+    print("\n🎯 HAND EVALUATION TEST")
+    print("=" * 50)
+    
+    # Test some sample hands
+    test_hands = [
+        ("AA", jnp.array([0, 1])),  # Aces
+        ("KK", jnp.array([12, 13])),  # Kings  
+        ("AK", jnp.array([0, 12])),  # Ace-King
+        ("72", jnp.array([5, 18])),  # 7-2 offsuit
+        ("T9", jnp.array([8, 9])),  # Ten-Nine
+    ]
+    
+    community_cards = jnp.array([20, 21, 22, -1, -1])  # Flop only
+    
+    for hand_name, hole_cards in test_hands:
+        strength = _evaluate_7card_simple(hole_cards, community_cards, 0)
+        print(f"   {hand_name}: strength = {strength:.3f}")
 
+def test_detailed_hand_evaluation():
+    """Test each component of hand evaluation separately."""
+    
+    print("\n🎯 DETAILED HAND EVALUATION TEST")
+    print("=" * 50)
+    
+    # Test hands with different board textures
+    test_scenarios = [
+        ("Dry board", jnp.array([20, 21, 22, -1, -1])),  # 5-6-7 rainbow
+        ("Wet board", jnp.array([0, 4, 8, -1, -1])),     # A-2-3 suited
+        ("Paired board", jnp.array([12, 13, 20, -1, -1])), # K-K-5
+    ]
+    
+    test_hands = [
+        ("AA", jnp.array([0, 1])),  # Aces
+        ("KK", jnp.array([12, 13])),  # Kings  
+        ("AK", jnp.array([0, 12])),  # Ace-King
+        ("72", jnp.array([5, 18])),  # 7-2 offsuit
+    ]
+    
+    for board_name, community_cards in test_scenarios:
+        print(f"\n📊 {board_name}: {community_cards}")
+        
+        for hand_name, hole_cards in test_hands:
+            # Test starting hand classification
+            starting_strength = classify_starting_hand(hole_cards)
+            
+            # Test hand vs board analysis
+            board_strength = analyze_hand_vs_board(hole_cards, community_cards)
+            
+            # Test multi-street evaluation
+            multi_street_strength = evaluate_hand_strength_multi_street(hole_cards, community_cards, 0)
+            
+            # Test final evaluation
+            final_strength = _evaluate_7card_simple(hole_cards, community_cards, 0)
+            
+            print(f"   {hand_name}: board={board_strength:.3f}, final={final_strength:.3f}")
 
-print("\n🔍 TESTING LEARNING RATE DECAY:")
-print("=" * 40)
+def test_info_set_calculation():
+    """Test info set calculation to see if it's working correctly."""
+    
+    print("\n🎯 INFO SET CALCULATION TEST")
+    print("=" * 50)
+    
+    # Test some sample scenarios
+    test_scenarios = [
+        ("Preflop AA", jnp.array([0, 1]), jnp.array([-1, -1, -1, -1, -1]), 0, 100, 1000),
+        ("Flop AK", jnp.array([0, 12]), jnp.array([20, 21, 22, -1, -1]), 1, 150, 1200),
+        ("Turn QQ", jnp.array([10, 11]), jnp.array([30, 31, 32, 33, -1]), 2, 200, 800),
+    ]
+    
+    for scenario_name, hole_cards, community_cards, player_idx, pot, stack in test_scenarios:
+        info_set_id = compute_info_set_id_enhanced(
+            hole_cards, community_cards, player_idx, 
+            jnp.array([pot]), jnp.array([stack]), max_info_sets=5000000
+        )
+        print(f"   {scenario_name}: info_set_id = {info_set_id}")
 
-import math
+def test_realistic_action_values():
+    """Test action values with realistic hand strengths from our fixed evaluation."""
+    
+    print("\n🎯 REALISTIC ACTION VALUES TEST")
+    print("=" * 50)
+    
+    # Test realistic scenarios from our fixed evaluation
+    test_scenarios = [
+        ("AA on dry board", 0.945),
+        ("KK on wet board", 0.760),
+        ("AK on paired board", 0.902),
+        ("72 on wet board", 0.522),
+        ("72 on paired board", 0.522),
+    ]
+    
+    pot_size = 100.0
+    action_aggressiveness = jnp.array([-1.0, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0], dtype=jnp.float32)
+    actions = ["FOLD", "CHECK", "CALL", "BET_SMALL", "BET_MED", "BET_LARGE", "RAISE_SMALL", "RAISE_MED", "ALL_IN"]
+    
+    for scenario_name, hand_strength in test_scenarios:
+        strength_modifier = (hand_strength - 0.5) * 2.0
+        values = action_aggressiveness * strength_modifier * pot_size
+        
+        # Add weak hand penalty (simulating the fix)
+        weak_hand_penalty = jnp.where(
+            hand_strength < 0.6,  # Changed threshold
+            jnp.array([0.0, 0.0, -50.0, -100.0, -150.0, -200.0, -250.0, -300.0, -400.0], dtype=jnp.float32),  # Increased penalties
+            jnp.zeros(9, dtype=jnp.float32)
+        )
+        values = values + weak_hand_penalty
+        
+        best_action_idx = jnp.argmax(values)
+        worst_action_idx = jnp.argmin(values)
+        
+        print(f"\n📊 {scenario_name} (strength: {hand_strength:.3f})")
+        print(f"   Strength modifier: {strength_modifier:.3f}")
+        print(f"   Best action: {actions[best_action_idx]} (value: {values[best_action_idx]:.2f})")
+        print(f"   Worst action: {actions[worst_action_idx]} (value: {values[worst_action_idx]:.2f})")
+        
+        # Show top 3 actions
+        top_indices = jnp.argsort(values)[-3:][::-1]
+        print(f"   Top 3 actions:")
+        for i, idx in enumerate(top_indices):
+            print(f"     {i+1}. {actions[idx]}: {values[idx]:.2f}")
+        
+        # Show if weak hands now prefer folding
+        if hand_strength < 0.6:
+            fold_value = values[0]  # FOLD
+            allin_value = values[8]  # ALL_IN
+            print(f"   Weak hand check: FOLD={fold_value:.2f}, ALL_IN={allin_value:.2f}")
+            if fold_value > allin_value:
+                print(f"   ✅ Weak hand correctly prefers FOLD over ALL_IN")
+            else:
+                print(f"   ❌ Weak hand still prefers ALL_IN over FOLD")
 
-learning_rate_base = 0.02
-iterations = [1000, 10000, 20000, 50000]
-
-for iter_num in iterations:
-    lr = learning_rate_base / math.sqrt(iter_num + 1)
-    print(f"Iteration {iter_num:5d}: LR = {lr:.8f}")
-
-print(f"\n🚨 At 50K iterations:")
-final_lr = learning_rate_base / math.sqrt(50000 + 1) 
-print(f"   Learning rate: {final_lr:.8f}")
-print(f"   Effective regret update: {final_lr * 1.222:.8f}")
-print(f"   This is practically ZERO!")
+if __name__ == "__main__":
+    test_action_values()
+    test_hand_evaluation() 
+    test_detailed_hand_evaluation()
+    test_realistic_action_values()
+    test_info_set_calculation()

@@ -142,22 +142,22 @@ def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray)
     is_pocket_pair = hole_ranks[0] == hole_ranks[1]
     is_overpair = is_pocket_pair & (hole_ranks[0] > highest_board_rank) & (num_community >= 3)
     
-    # Scoring con overpair detection - FIXED VALUES
+    # FIXED: More realistic hand strength values to prevent clipping
     made_hand_strength = jnp.where(
-        max_rank_count >= 4, 0.98,  # Quads
+        max_rank_count >= 4, 0.95,  # Quads (was 0.98)
         jnp.where(
-            (max_rank_count >= 3) & (pairs_count >= 2), 0.95,  # Full house
+            (max_rank_count >= 3) & (pairs_count >= 2), 0.90,  # Full house (was 0.95)
             jnp.where(
-                max_suit_count >= 5, 0.90,  # Flush
+                max_suit_count >= 5, 0.85,  # Flush (was 0.90)
                 jnp.where(
-                    max_rank_count >= 3, 0.85,  # Trips/Sets
+                    max_rank_count >= 3, 0.75,  # Trips/Sets (was 0.85)
                     jnp.where(
-                        pairs_count >= 2, 0.80,  # Two pair
+                        pairs_count >= 2, 0.70,  # Two pair (was 0.80)
                         jnp.where(
-                            is_overpair, 0.85,  # Overpair
+                            is_overpair, 0.80,  # Overpair (was 0.85)
                             jnp.where(
-                                max_rank_count >= 2, 0.60,  # Top pair
-                                0.25  # Overcards/High card
+                                max_rank_count >= 2, 0.55,  # Top pair (was 0.60)
+                                0.30  # Overcards/High card (was 0.25)
                             )
                         )
                     )
@@ -177,12 +177,12 @@ def analyze_hand_vs_board(hole_cards: jnp.ndarray, community_cards: jnp.ndarray)
     draw_strength = jnp.where(
         num_community < 5,
         jnp.where(
-            our_suit_count == 4, 0.4,
-            jnp.where(our_suit_count == 3, 0.2, 0.0)
+            our_suit_count == 4, 0.35,  # Flush draw (was 0.4)
+            jnp.where(our_suit_count == 3, 0.15, 0.0)  # Flush draw (was 0.2)
         ),
         0.0
     )
     
-    final_strength = jnp.clip(made_hand_strength + draw_strength, 0.0, 1.0)
+    final_strength = jnp.clip(made_hand_strength + draw_strength, 0.0, 0.95)  # Clamp to 0.95 max
     
     return jnp.where(num_community >= 3, final_strength, 0.5) 

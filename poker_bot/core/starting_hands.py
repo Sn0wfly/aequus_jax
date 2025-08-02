@@ -130,14 +130,16 @@ def evaluate_hand_strength_multi_street(
     board_wetness = analyze_board_texture(community_cards)
     street_multiplier = get_street_multiplier(num_community)
     
+    # FIXED: Remove excessive multipliers that cause clipping
     # En boards wet, ser más cauteloso con manos marginales
     board_adjustment = jnp.where(
         board_wetness > 0.6,  # Board muy wet
-        postflop_base * 0.9,  # Reducir confianza
-        postflop_base * 1.1   # Board dry, aumentar confianza
+        postflop_base * 0.95,  # Reducir confianza (was 0.9)
+        postflop_base * 1.05   # Board dry, aumentar confianza (was 1.1)
     )
     
-    postflop_strength = board_adjustment * street_multiplier
+    # FIXED: Remove street_multiplier to prevent excessive values
+    postflop_strength = board_adjustment  # Remove * street_multiplier
     
     # Seleccionar evaluación según street
     final_strength = jnp.where(

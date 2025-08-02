@@ -9,7 +9,7 @@
 num_iterations: 1000000             # Total CFR iterations (professional level).
 batch_size: 2048             #Games per training batch (optimized for vast.ai 24GB VRAM)
 learning_rate: 0.005                # CFR learning rate
-max_info_sets: 5000000            # Maximum info sets (reduced for memory optimization)
+max_info_sets: 1000000            # Maximum info sets (reduced to concentrate training)
 save_interval: 25000               # Save checkpoint every N iterations
 log_interval: 10000                  # Log progress every N iterations
 
@@ -29,7 +29,7 @@ discount_factor: 0.95            # Factor de descuento para los regrets (CFR-γ)
 # ==============================================================================
 
 # Monte Carlo Sampling Settings
-mc_sampling_rate: 1.0             # Process 50% of learning opportunities (was 0.15)
+mc_sampling_rate: 0.5              # MC sampling rate (increased from 1.0 to process more info sets)
 mc_exploration_epsilon: 0.9        # 60% exploration, 40% exploitation
 mc_min_samples_per_info_set: 100   # Minimum samples before considering info set learned
 mc_max_samples_per_info_set: 10000 # Maximum samples per info set (prevents overfitting)
