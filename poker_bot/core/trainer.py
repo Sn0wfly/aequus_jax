@@ -483,70 +483,52 @@ def create_trainer(config_path: Optional[str] = None) -> PokerTrainer:
 
 def generate_diverse_game_state(key: jax.Array, num_players: int = 6) -> GameState:
     """
-    Genera un estado de juego MUCHO MÁS diverso para forzar exploración real.
+    Genera un estado de juego MUCHO MÁS diverso (V2 - PRNGKey Fix).
+    Cada operación aleatoria usa una sub-clave única para garantizar la independencia.
     """
-    key, subkey1, subkey2, subkey3, subkey4, subkey5, subkey6 = jax.random.split(key, 7)
-
-    deck = jax.random.permutation(subkey1, jnp.arange(52))
-    street = jax.random.randint(subkey2, (), 0, 4)
-
+    # --- Manejo Correcto de Claves Aleatorias ---
+    keys = jax.random.split(key, 8) # Necesitamos 8 subclaves, una para cada decisión
+    k_deck, k_street, k_stack_scen, k_stack_mult, k_pot_scen, k_pot_val, k_player, k_final = keys
+    
+    # --- Generación de Estado (Lógica sin cambios, solo claves diferentes) ---
+    deck = jax.random.permutation(k_deck, jnp.arange(52))
+    street = jax.random.randint(k_street, (), 0, 4)
     hole_cards = deck[:num_players*2].reshape(num_players, 2)
     
-    # Determina dinámicamente cuántas cartas comunitarias se necesitan
     num_community_cards = jnp.where(street == 1, 3, jnp.where(street == 2, 4, jnp.where(street == 3, 5, 0)))
-
-    # Para cumplir con JIT, tomamos un slice ESTÁTICO del tamaño máximo posible (5 cartas para el board)
     potential_community_cards = lax.dynamic_slice(deck, (num_players*2,), (5,))
-
-    # Y usamos una MÁSCARA dinámica para seleccionar solo las cartas que necesitamos para la calle actual.
     mask = jnp.arange(5) < num_community_cards
-
-    # Donde la máscara sea True, usamos la carta del mazo; donde sea False, ponemos -1.
     community_cards = jnp.where(mask, potential_community_cards, -1)
 
-    # MUCHA MÁS DIVERSIDAD EN STACKS
-    stack_scenarios = jax.random.randint(subkey3, (), 0, 5)
-    
-    base_stacks = lax.cond(
-        stack_scenarios == 0,
-        lambda: jnp.full((num_players,), 1000.0),  # Normal
-        lambda: lax.cond(
-            stack_scenarios == 1,
-            lambda: jnp.array([50.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0]),  # Short stacks
-            lambda: lax.cond(
-                stack_scenarios == 2,
-                lambda: jnp.array([10000.0, 8000.0, 6000.0, 4000.0, 2000.0, 1000.0]),  # Deep stacks
-                lambda: lax.cond(
-                    stack_scenarios == 3,
-                    lambda: jnp.array([100.0, 100.0, 100.0, 100.0, 100.0, 100.0]),  # All short
-                    lambda: jnp.array([5000.0, 5000.0, 5000.0, 5000.0, 5000.0, 5000.0])  # All deep
-                )
-            )
-        )
+    # Diversidad en Stacks
+    stack_scenarios = jax.random.randint(k_stack_scen, (), 0, 5)
+    base_stacks = lax.switch(
+        stack_scenarios,
+        [
+            lambda: jnp.full((num_players,), 1000.0), # Normal
+            lambda: jnp.array([50.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0]), # Mixto
+            lambda: jnp.array([10000.0, 8000.0, 6000.0, 4000.0, 2000.0, 1000.0]), # Deep
+            lambda: jnp.full((num_players,), 100.0), # Todos Short
+            lambda: jnp.full((num_players,), 5000.0) # Todos Deep
+        ]
     )
-    
-    # APLICAR VARIACIÓN ADICIONAL A LOS STACKS
-    stack_multipliers = jax.random.uniform(subkey4, shape=(num_players,), minval=0.1, maxval=2.0)
+    stack_multipliers = jax.random.uniform(k_stack_mult, shape=(num_players,), minval=0.1, maxval=2.0)
     stacks = base_stacks * stack_multipliers
     
-    # DIVERSIDAD EN POT SIZES
-    pot_scenarios = jax.random.randint(subkey5, (), 0, 4)
-    pot = lax.cond(
-        pot_scenarios == 0,
-        lambda: jax.random.uniform(subkey6, shape=(), minval=15.0, maxval=100.0),  # Small
-        lambda: lax.cond(
-            pot_scenarios == 1,
-            lambda: jax.random.uniform(subkey6, shape=(), minval=100.0, maxval=500.0),  # Medium
-            lambda: lax.cond(
-                pot_scenarios == 2,
-                lambda: jax.random.uniform(subkey6, shape=(), minval=500.0, maxval=2000.0),  # Large
-                lambda: jax.random.uniform(subkey6, shape=(), minval=2000.0, maxval=10000.0)  # Massive
-            )
-        )
+    # Diversidad en Pot Sizes
+    pot_scenarios = jax.random.randint(k_pot_scen, (), 0, 4)
+    pot = lax.switch(
+        pot_scenarios,
+        [
+            lambda: jax.random.uniform(k_pot_val, shape=(), minval=15.0, maxval=100.0), # Small
+            lambda: jax.random.uniform(k_pot_val, shape=(), minval=100.0, maxval=500.0), # Medium
+            lambda: jax.random.uniform(k_pot_val, shape=(), minval=500.0, maxval=2000.0), # Large
+            lambda: jax.random.uniform(k_pot_val, shape=(), minval=2000.0, maxval=10000.0) # Massive
+        ]
     )
     
-    # VARIAR POSICIÓN DEL JUGADOR ACTUAL
-    current_player = jax.random.randint(subkey6, (), 0, num_players)
+    # Jugador Actual Aleatorio
+    current_player = jax.random.randint(k_player, (), 0, num_players)
     
     return GameState(
         stacks=stacks,
@@ -560,7 +542,7 @@ def generate_diverse_game_state(key: jax.Array, num_players: int = 6) -> GameSta
         deck=deck,
         deck_ptr=jnp.array([num_players*2 + num_community_cards]),
         acted_this_round=jnp.zeros((num_players,), dtype=jnp.int8),
-        key=key,
+        key=k_final, # Usamos la última subclave para el estado final
         action_hist=jnp.zeros((60,), dtype=jnp.int32),
         hist_ptr=jnp.array([0])
     )
