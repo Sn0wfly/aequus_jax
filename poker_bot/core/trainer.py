@@ -318,7 +318,14 @@ class PokerTrainer:
             stats['strategy_entropies'].append(strategy_entropy)
             stats['training_times'].append(iter_time)
             if i % self.config.log_interval == 0:
-                logger.info(f"📊 MCCFR Iteration {i}: regret={regret_magnitude:.4f}, entropy={strategy_entropy:.4f}, trained_sets={entropy_details['trained_info_sets']}, time={iter_time:.3f}s")
+                logger.info(
+                    f"📊 MCCFR Iteration {i}: regret={regret_magnitude:.4f}, "
+                    f"entropy={strategy_entropy:.4f}, "
+                    f"trained_sets={entropy_details['trained_info_sets']}, "
+                    f"trained_entropy={entropy_details['trained_entropy_avg']:.4f}, "
+                    f"trained_pct={entropy_details['trained_percentage']:.4f}%, "
+                    f"time={iter_time:.3f}s"
+                )
             if i > 0 and i % self.config.save_interval == 0:
                 checkpoint_path = f"{save_path}_iter_{i}.pkl"
                 self.save_model(checkpoint_path)

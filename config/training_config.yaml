@@ -7,9 +7,9 @@
 
 # CFR Training Settings
 num_iterations: 1000000             # Total CFR iterations (professional level).
-batch_size: 1024                    # Games per training batch (set lower for faster step time)
-learning_rate: 0.01                 # CFR learning rate (higher for stronger early signal)
-max_info_sets: 1000000              # Reduce for faster updates and clearer entropy signal
+batch_size: 768                     # Games per training batch (faster step time, good throughput)
+learning_rate: 0.01                 # CFR learning rate (stronger early signal)
+max_info_sets: 500000               # Reduce for faster updates and clearer entropy signal
 save_interval: 50000                # Save checkpoint every N iterations
 log_interval: 1000                  # Log progress every N iterations
 
@@ -21,15 +21,15 @@ strategy_threshold: 0.000001       # Minimum strategy probability
 
 # Hybrid CFR+ Settings
 use_cfr_plus: true                 # Activa/desactiva la poda de regrets de CFR+
-use_regret_discounting: false       # Activa/desactiva el descuento de regrets
-discount_factor: 0.95            # Factor de descuento para los regrets (CFR-γ)
+use_regret_discounting: true        # Activa/desactiva el descuento de regrets
+discount_factor: 0.99               # Factor de descuento para los regrets (CFR-γ)
 
 # ==============================================================================
 # MC-CFR PARAMETERS
 # ==============================================================================
 
 # Monte Carlo Sampling Settings
-mc_sampling_rate: 0.25             # MC sampling rate (balance speed/variance)
+mc_sampling_rate: 0.35             # MC sampling rate (more updates per second)
 mc_exploration_epsilon: 0.9        # 60% exploration, 40% exploitation
 mc_min_samples_per_info_set: 100   # Minimum samples before considering info set learned
 mc_max_samples_per_info_set: 10000 # Maximum samples per info set (prevents overfitting)
