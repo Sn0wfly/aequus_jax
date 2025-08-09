@@ -594,7 +594,8 @@ def run_betting_round(init_state, num_actions=9, strategy_table: jax.Array = Non
             # Compute info set id for current decision
             p = jnp.squeeze(s.cur_player).astype(jnp.int32)
             hole = s.hole_cards[p]
-            info_id = compute_info_set_id_enhanced(hole, s.comm_cards, p, s.pot, s.stacks[p:p+1])
+            stack_slice = lax.dynamic_slice(s.stacks, (p,), (1,))
+            info_id = compute_info_set_id_enhanced(hole, s.comm_cards, p, s.pot, stack_slice)
             # Fetch strategy probs or fallback to uniform
             def sample_from_strategy():
                 probs = strategy_table[info_id]
