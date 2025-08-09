@@ -506,8 +506,10 @@ def apply_action_3(state, action):
     legal = get_legal_actions_3(state)
     pot_scalar = jnp.squeeze(state.pot)
     player_index = jnp.squeeze(state.cur_player).astype(jnp.int32)
-    hole = state.hole_cards[player_index]
-    info_id = compute_info_set_id_enhanced(hole, state.comm_cards, player_index, state.pot, state.stacks[player_index:player_index+1])
+    hole_slice = lax.dynamic_slice(state.hole_cards, (player_index, 0), (1, 2))
+    hole = hole_slice[0]
+    stack_slice = lax.dynamic_slice(state.stacks, (player_index,), (1,))
+    info_id = compute_info_set_id_enhanced(hole, state.comm_cards, player_index, state.pot, stack_slice)
 
     new_hist = state2.action_hist.at[idx].set(action)
     # Expand legal to 9 slots for consistency (pad with False)
