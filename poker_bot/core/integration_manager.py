@@ -23,15 +23,15 @@ class IntegrationManager:
         ]
         
     def validate_mc_sampling(self, trainer) -> bool:
-        """Validate MC sampling is working correctly."""
-        # Test that sampling rate is approximately 15%
+        """Validate MC sampling matches TrainerConfig.mc_sampling_rate."""
         key = jax.random.PRNGKey(42)
         info_set_indices = jnp.arange(10000)
+        # Use the trainer's configured sampling strategy
         sampling_mask = trainer.mc_sampling_strategy(
-            jnp.zeros(10000), info_set_indices, key
+            jnp.zeros(10000), info_set_indices, key, trainer.config
         )
         actual_rate = jnp.sum(sampling_mask) / 10000.0
-        expected_rate = 0.15
+        expected_rate = trainer.config.mc_sampling_rate
         return abs(actual_rate - expected_rate) < 0.02
     
     def test_regret_accumulation(self, trainer) -> bool:

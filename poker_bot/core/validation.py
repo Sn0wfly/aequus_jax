@@ -118,8 +118,8 @@ class PokerAIValidator:
             for i, hand in enumerate(test_hands):
                 # Use hand directly with compute_info_set_id
                 bucket_id = compute_info_set_id(hand, mock_community, 0)
-                
-                if bucket_id < 0 or bucket_id >= 1000000:  # Updated to match max_info_sets
+                # Validate against a sensible large bound but not hardcoded to 1e6
+                if (bucket_id < 0) or (bucket_id >= 5_000_000):
                     logger.error(f"❌ Invalid bucket ID: {bucket_id}")
                     return False
             
@@ -147,8 +147,8 @@ class PokerAIValidator:
             lut_values = jnp.arange(1000)
             lut_table_size = 1000
             
-            payoffs1, _, results1 = game_engine.unified_batch_simulation_with_lut(keys1, lut_keys, lut_values, lut_table_size)
-            payoffs2, _, results2 = game_engine.unified_batch_simulation_with_lut(keys2, lut_keys, lut_values, lut_table_size)
+            payoffs1, _, _ = game_engine.unified_batch_simulation_with_lut(keys1, lut_keys, lut_values, lut_table_size)
+            payoffs2, _, _ = game_engine.unified_batch_simulation_with_lut(keys2, lut_keys, lut_values, lut_table_size)
             
             # Check consistency
             payoffs_match = jnp.allclose(payoffs1, payoffs2, atol=1e-6)

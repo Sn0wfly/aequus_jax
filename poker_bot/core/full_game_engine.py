@@ -7,6 +7,7 @@ from functools import partial
 import numpy as np
 from jax.tree_util import register_pytree_node_class
 from ..evaluator import HandEvaluator
+from .bucketing import compute_info_set_id_enhanced
 
 MAX_GAME_LENGTH = 60
 evaluator = HandEvaluator()
@@ -32,12 +33,19 @@ class GameState:
     key: jax.Array
     action_hist: jax.Array
     hist_ptr: jax.Array
+    # Trajectory logging for training
+    info_hist: jax.Array        # [MAX_GAME_LENGTH] int32 info set ids per decision
+    legal_hist: jax.Array       # [MAX_GAME_LENGTH, 9] bool legal actions per decision
+    player_hist: jax.Array      # [MAX_GAME_LENGTH] int8 current player per decision
+    pot_hist: jax.Array         # [MAX_GAME_LENGTH] float pot size per decision
+    comm_hist: jax.Array        # [MAX_GAME_LENGTH, 5] int32 community snapshot per decision
 
     def tree_flatten(self):
         children = (self.stacks, self.bets, self.player_status, self.hole_cards,
                     self.comm_cards, self.cur_player, self.street, self.pot,
                     self.deck, self.deck_ptr, self.acted_this_round,
-                    self.key, self.action_hist, self.hist_ptr)
+                    self.key, self.action_hist, self.hist_ptr,
+                    self.info_hist, self.legal_hist, self.player_hist, self.pot_hist, self.comm_hist)
         return children, None
 
     @classmethod
@@ -358,10 +366,30 @@ def apply_action_9(state, action):
         state
     )
     
-    new_hist = state2.action_hist.at[state2.hist_ptr[0]].set(action)
+    # Log decision context (info set, legal actions, player, pot)
+    idx = state2.hist_ptr[0]
+    legal = get_legal_actions_9(state)
+    pot_scalar = jnp.squeeze(state.pot)
+    # Compute info set id for the acting player using enhanced bucketing
+    player_index = jnp.squeeze(state.cur_player).astype(jnp.int32)
+    # Extract hole cards for player
+    hole = state.hole_cards[player_index]
+    info_id = compute_info_set_id_enhanced(hole, state.comm_cards, player_index, state.pot, state.stacks[player_index:player_index+1])
+
+    new_hist = state2.action_hist.at[idx].set(action)
+    new_info_hist = state2.info_hist.at[idx].set(info_id)
+    new_legal_hist = state2.legal_hist.at[idx].set(legal)
+    new_player_hist = state2.player_hist.at[idx].set(player_index.astype(jnp.int8))
+    new_pot_hist = state2.pot_hist.at[idx].set(pot_scalar)
+    new_comm_hist = state2.comm_hist.at[idx].set(state.comm_cards)
     return replace(
         state2,
         action_hist=new_hist,
+        info_hist=new_info_hist,
+        legal_hist=new_legal_hist,
+        player_hist=new_player_hist,
+        pot_hist=new_pot_hist,
+        comm_hist=new_comm_hist,
         hist_ptr=state2.hist_ptr + 1,
         acted_this_round=state2.acted_this_round + 1
     )
@@ -411,10 +439,30 @@ def apply_action_6(state, action):
         state
     )
     
-    new_hist = state2.action_hist.at[state2.hist_ptr[0]].set(action)
+    # Minimal logging for 6-action path (use 9-action logging format)
+    idx = state2.hist_ptr[0]
+    legal = get_legal_actions_6(state)
+    pot_scalar = jnp.squeeze(state.pot)
+    player_index = jnp.squeeze(state.cur_player).astype(jnp.int32)
+    hole = state.hole_cards[player_index]
+    info_id = compute_info_set_id_enhanced(hole, state.comm_cards, player_index, state.pot, state.stacks[player_index:player_index+1])
+
+    new_hist = state2.action_hist.at[idx].set(action)
+    new_info_hist = state2.info_hist.at[idx].set(info_id)
+    # Expand legal to 9 slots for consistency (pad with False)
+    legal9 = jnp.concatenate([legal, jnp.zeros((3,), dtype=jnp.bool_)])
+    new_legal_hist = state2.legal_hist.at[idx].set(legal9)
+    new_player_hist = state2.player_hist.at[idx].set(player_index.astype(jnp.int8))
+    new_pot_hist = state2.pot_hist.at[idx].set(pot_scalar)
+    new_comm_hist = state2.comm_hist.at[idx].set(state.comm_cards)
     return replace(
         state2,
         action_hist=new_hist,
+        info_hist=new_info_hist,
+        legal_hist=new_legal_hist,
+        player_hist=new_player_hist,
+        pot_hist=new_pot_hist,
+        comm_hist=new_comm_hist,
         hist_ptr=state2.hist_ptr + 1,
         acted_this_round=state2.acted_this_round + 1
     )
@@ -449,10 +497,30 @@ def apply_action_3(state, action):
         )
 
     state2 = lax.switch(jnp.clip(action, 0, 2), [do_fold, do_check_call, do_bet_raise], state)
-    new_hist = state2.action_hist.at[state2.hist_ptr[0]].set(action)
+    # Minimal logging for 3-action path (use 9-action logging format)
+    idx = state2.hist_ptr[0]
+    legal = get_legal_actions_3(state)
+    pot_scalar = jnp.squeeze(state.pot)
+    player_index = jnp.squeeze(state.cur_player).astype(jnp.int32)
+    hole = state.hole_cards[player_index]
+    info_id = compute_info_set_id_enhanced(hole, state.comm_cards, player_index, state.pot, state.stacks[player_index:player_index+1])
+
+    new_hist = state2.action_hist.at[idx].set(action)
+    # Expand legal to 9 slots for consistency (pad with False)
+    legal9 = jnp.concatenate([legal, jnp.zeros((6,), dtype=jnp.bool_)])
+    new_info_hist = state2.info_hist.at[idx].set(info_id)
+    new_legal_hist = state2.legal_hist.at[idx].set(legal9)
+    new_player_hist = state2.player_hist.at[idx].set(player_index.astype(jnp.int8))
+    new_pot_hist = state2.pot_hist.at[idx].set(pot_scalar)
+    new_comm_hist = state2.comm_hist.at[idx].set(state.comm_cards)
     return replace(
         state2,
         action_hist=new_hist,
+        info_hist=new_info_hist,
+        legal_hist=new_legal_hist,
+        player_hist=new_player_hist,
+        pot_hist=new_pot_hist,
+        comm_hist=new_comm_hist,
         hist_ptr=state2.hist_ptr + 1,
         acted_this_round=state2.acted_this_round + 1
     )
@@ -514,12 +582,37 @@ def _betting_body_3(state):
     return replace(state, cur_player=jnp.array([next_p], dtype=jnp.int8))
 
 @jax.jit
-def run_betting_round(init_state, num_actions=9):
+def run_betting_round(init_state, num_actions=9, strategy_table: jax.Array = None):
     """Run betting round with configurable action space."""
     cond = lambda s: ~is_betting_done(s.player_status, s.bets, s.acted_this_round, s.street)
     
     def run_9_action():
-        return lax.while_loop(cond, _betting_body_9, init_state)
+        # Close over strategy_table for sampling
+        def body_fn(s):
+            legal = get_legal_actions_9(s)
+            key, subkey = jax.random.split(s.key)
+            # Compute info set id for current decision
+            p = jnp.squeeze(s.cur_player).astype(jnp.int32)
+            hole = s.hole_cards[p]
+            info_id = compute_info_set_id_enhanced(hole, s.comm_cards, p, s.pot, s.stacks[p:p+1])
+            # Fetch strategy probs or fallback to uniform
+            def sample_from_strategy():
+                probs = strategy_table[info_id]
+                probs_masked = jnp.where(legal, probs, 0.0)
+                total = jnp.sum(probs_masked)
+                safe_probs = jnp.where(total > 0, probs_masked / total, jnp.where(legal, 1.0, 0.0))
+                logits = jnp.log(jnp.clip(safe_probs, 1e-12, 1.0))
+                return jax.random.categorical(subkey, logits)
+            def sample_uniform():
+                return jax.random.categorical(subkey, jnp.where(legal, 0.0, -1e9))
+            use_policy = strategy_table is not None
+            action = lax.cond(use_policy, sample_from_strategy, sample_uniform)
+            s2 = replace(s, key=key)
+            s2 = apply_action_9(s2, action)
+            current_p = jnp.squeeze(s2.cur_player)
+            next_p = next_active_player(s2.player_status, (current_p + 1) % 6)
+            return replace(s2, cur_player=jnp.array([next_p], dtype=jnp.int8))
+        return lax.while_loop(cond, body_fn, init_state)
     
     def run_6_action():
         return lax.while_loop(cond, _betting_body_6, init_state)
@@ -539,25 +632,29 @@ def run_betting_round(init_state, num_actions=9):
     )
 
 # ---------- Street ----------
-def play_street(state: GameState, num_cards: int, num_actions: int = 9) -> GameState:
+def play_street(state: GameState, num_cards: int, num_actions: int = 9, strategy_table: jax.Array = None) -> GameState:
     def deal(s: GameState) -> GameState:
         start = s.deck_ptr[0]
         cards = lax.dynamic_slice(s.deck, (start,), (num_cards,))
-        comm = lax.dynamic_update_slice(s.comm_cards, cards, (start,))
+        # Write community cards starting at current number of dealt community cards
+        num_comm_dealt = jnp.sum(s.comm_cards >= 0).astype(jnp.int32)
+        comm_start = num_comm_dealt
+        comm = lax.dynamic_update_slice(s.comm_cards, cards, (comm_start,))
         return replace(
             s,
             comm_cards=comm,
             deck_ptr=s.deck_ptr + num_cards,
             acted_this_round=jnp.zeros((6,), dtype=jnp.int8),
-            cur_player=jnp.array([0], dtype=jnp.int8)
+            cur_player=jnp.array([0], dtype=jnp.int8),
+            street=s.street + 1
         )
     
     def deal_and_bet():
         state_with_cards = lax.cond(num_cards > 0, deal, lambda x: x, state)
-        return run_betting_round(state_with_cards, num_actions)
+        return run_betting_round(state_with_cards, num_actions, strategy_table)
     
     def just_bet():
-        return run_betting_round(state, num_actions)
+        return run_betting_round(state, num_actions, strategy_table)
     
     # Use lax.cond for JAX compatibility
     return lax.cond(
@@ -601,7 +698,7 @@ def resolve_showdown(state: GameState, lut_keys, lut_values, table_size) -> jax.
 
 # ---------- Game simulation ----------
 @jax.jit
-def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9):
+def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9, strategy_table: jax.Array = None):
     """Play one complete game with MORE DIVERSITY."""
     idx_scalar = jax.random.randint(key, (), 0, 1000000)
     key = jax.random.fold_in(jax.random.PRNGKey(0), idx_scalar)
@@ -610,7 +707,7 @@ def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9):
     stacks = jnp.full((6,), 1000.0)
     bets = jnp.zeros((6,)).at[0].set(5.0).at[1].set(10.0)
     player_status = jnp.zeros((6,), dtype=jnp.int8)
-    # Randomizar hole_cards
+    # Randomizar hole_cards y usar una sola baraja para todo
     key, subkey = jax.random.split(key)
     shuffled_deck = jax.random.permutation(subkey, jnp.arange(52))
     hole_cards = shuffled_deck[:12].reshape(6, 2)
@@ -618,17 +715,23 @@ def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9):
     cur_player = jnp.array([2], dtype=jnp.int8)
     street = jnp.array([0], dtype=jnp.int8)
     pot = jnp.array([15.0])
-    deck = jnp.arange(52)
+    deck = shuffled_deck
     deck_ptr = jnp.array([12])
     acted_this_round = jnp.zeros((6,), dtype=jnp.int8)
     action_hist = jnp.zeros((MAX_GAME_LENGTH,), dtype=jnp.int32)
+    info_hist = jnp.zeros((MAX_GAME_LENGTH,), dtype=jnp.int32)
+    legal_hist = jnp.zeros((MAX_GAME_LENGTH, 9), dtype=jnp.bool_)
+    player_hist = jnp.zeros((MAX_GAME_LENGTH,), dtype=jnp.int8)
+    pot_hist = jnp.zeros((MAX_GAME_LENGTH,), dtype=jnp.float32)
     hist_ptr = jnp.array([0])
     
     state = GameState(
         stacks=stacks, bets=bets, player_status=player_status, hole_cards=hole_cards,
         comm_cards=comm_cards, cur_player=cur_player, street=street, pot=pot,
         deck=deck, deck_ptr=deck_ptr, acted_this_round=acted_this_round,
-        key=key, action_hist=action_hist, hist_ptr=hist_ptr
+        key=key, action_hist=action_hist, hist_ptr=hist_ptr,
+        info_hist=info_hist, legal_hist=legal_hist, player_hist=player_hist, pot_hist=pot_hist,
+        comm_hist=jnp.full((MAX_GAME_LENGTH, 5), -1, dtype=jnp.int32)
     )
     
     # NEW: DIVERSIFIED STREET PLAY
@@ -636,25 +739,25 @@ def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9):
     random_choice = jax.random.randint(subkey, (), 0, 4)
     
     # Play different game lengths for diversity
-    state = play_street(state, 0, num_actions)   # Always preflop
+    state = play_street(state, 0, num_actions, strategy_table)   # Always preflop
     
     state = lax.cond(
         random_choice >= 1,  # 75% chance to see flop
-        lambda s: play_street(s, 3, num_actions),
+        lambda s: play_street(s, 3, num_actions, strategy_table),
         lambda s: s,
         state
     )
     
     state = lax.cond(
         random_choice >= 2,  # 50% chance to see turn
-        lambda s: play_street(s, 1, num_actions),
+        lambda s: play_street(s, 1, num_actions, strategy_table),
         lambda s: s,
         state
     )
     
     state = lax.cond(
         random_choice >= 3,  # 25% chance to see river
-        lambda s: play_street(s, 1, num_actions),
+        lambda s: play_street(s, 1, num_actions, strategy_table),
         lambda s: s,
         state
     )
@@ -671,16 +774,23 @@ def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9):
         'final_pot': state.pot,
         'player_stacks': state.stacks,
         'player_bets': state.bets,
-        'positions': positions  # NUEVO: incluir posiciones
+        'positions': positions,  # NUEVO: incluir posiciones
+        # Trajectory logs for training
+        'info_hist': state.info_hist,
+        'legal_hist': state.legal_hist,
+        'player_hist': state.player_hist,
+        'pot_hist': state.pot_hist,
+        'comm_hist': state.comm_hist,
+        'hist_len': state.hist_ptr[0]
     }
 
 @jax.jit
-def batch_play(keys, lut_keys, lut_values, table_size, num_actions=9):
+def batch_play(keys, lut_keys, lut_values, table_size, num_actions=9, strategy_table: jax.Array = None):
     """Play multiple games in batch with configurable action space."""
     return jax.vmap(
         play_one_game,
         in_axes=(0, None, None, None, None)
-    )(keys, lut_keys, lut_values, table_size, num_actions)
+    )(keys, lut_keys, lut_values, table_size, num_actions, strategy_table)
 
 @jax.jit
 def initial_state_for_idx(idx):
@@ -692,7 +802,7 @@ def initial_state_for_idx(idx):
     stacks = jnp.full((6,), 1000.0)
     bets = jnp.zeros((6,)).at[0].set(5.0).at[1].set(10.0)
     player_status = jnp.zeros((6,), dtype=jnp.int8)
-    # Randomizar hole_cards
+    # Randomizar hole_cards y usar una sola baraja para todo
     key, subkey = jax.random.split(key)
     shuffled_deck = jax.random.permutation(subkey, jnp.arange(52))
     hole_cards = shuffled_deck[:12].reshape(6, 2)
@@ -700,10 +810,14 @@ def initial_state_for_idx(idx):
     cur_player = jnp.array([2], dtype=jnp.int8)
     street = jnp.array([0], dtype=jnp.int8)
     pot = jnp.array([15.0])
-    deck = jnp.arange(52)
+    deck = shuffled_deck
     deck_ptr = jnp.array([12])
     acted_this_round = jnp.zeros((6,), dtype=jnp.int8)
     action_hist = jnp.zeros((MAX_GAME_LENGTH,), dtype=jnp.int32)
+    info_hist = jnp.zeros((MAX_GAME_LENGTH,), dtype=jnp.int32)
+    legal_hist = jnp.zeros((MAX_GAME_LENGTH, 9), dtype=jnp.bool_)
+    player_hist = jnp.zeros((MAX_GAME_LENGTH,), dtype=jnp.int8)
+    pot_hist = jnp.zeros((MAX_GAME_LENGTH,), dtype=jnp.float32)
     hist_ptr = jnp.array([0])
     
     return GameState(
@@ -720,24 +834,28 @@ def initial_state_for_idx(idx):
         acted_this_round=acted_this_round,
         key=key,
         action_hist=action_hist,
-        hist_ptr=hist_ptr
+        hist_ptr=hist_ptr,
+        info_hist=info_hist,
+        legal_hist=legal_hist,
+        player_hist=player_hist,
+        pot_hist=pot_hist
     )
 
 @jax.jit
-def unified_batch_simulation_with_lut_production(keys, lut_keys, lut_values, table_size, num_actions=9):
+def unified_batch_simulation_with_lut_production(keys, lut_keys, lut_values, table_size, num_actions=9, strategy_table: jax.Array = None):
     """
     Production-ready batch simulation with configurable action space.
     Optimized for speed and memory efficiency.
     """
-    return batch_play(keys, lut_keys, lut_values, table_size, num_actions)
+    return batch_play(keys, lut_keys, lut_values, table_size, num_actions, strategy_table)
 
 @jax.jit
-def unified_batch_simulation_with_lut_full(keys, lut_keys, lut_values, table_size, num_actions=9):
+def unified_batch_simulation_with_lut_full(keys, lut_keys, lut_values, table_size, num_actions=9, strategy_table: jax.Array = None):
     """
     Full-featured batch simulation with detailed game data.
     Returns comprehensive game information for analysis.
     """
-    return batch_play(keys, lut_keys, lut_values, table_size, num_actions)
+    return batch_play(keys, lut_keys, lut_values, table_size, num_actions, strategy_table)
 
 @jax.jit
 def generate_random_game_state_with_position(key):
@@ -772,12 +890,7 @@ def generate_random_game_state_with_position(key):
 # Backward compatibility aliases
 unified_batch_simulation_with_lut = unified_batch_simulation_with_lut_production
 
-# Auto-load LUT at module import (if available)
-try:
-    from .trainer import load_hand_evaluation_lut
-    load_hand_evaluation_lut()
-except:
-    pass  # Continue without LUT for testing
+# Se elimina la auto-carga de LUT para evitar import circular y costes en import
 
 @jax.jit
 def play_from_state(initial_state: GameState, lut_keys, lut_values, table_size, num_actions=9):

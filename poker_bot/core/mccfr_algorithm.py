@@ -97,6 +97,7 @@ def accumulate_regrets_fixed(
         indices_are_sorted=False,
         unique_indices=False
     )
+    # Clip and zero-out illegal actions post-hoc will be handled at strategy stage
     updated_regrets = jnp.clip(updated_regrets, -1000000.0, 1000000.0)
     return updated_regrets
 
@@ -105,14 +106,12 @@ def calculate_strategy(regrets: jnp.ndarray) -> jnp.ndarray:
     """Calculate strategy from regrets using regret matching."""
     positive_regrets = jnp.maximum(regrets, 0)
     sum_positive = jnp.sum(positive_regrets, axis=-1, keepdims=True)
-    
     # Avoid division by zero
     strategy = jnp.where(
         sum_positive > 0,
         positive_regrets / sum_positive,
         jnp.ones_like(regrets) / regrets.shape[-1]
     )
-    
     return strategy
 
 @jax.jit
@@ -166,12 +165,16 @@ def cfr_iteration(
     use_discounting: bool,
     config: TrainerConfig
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    """Single CFR iteration with MC sampling."""
+    """Single CFR iteration with MC outcome sampling.
+    action_values should carry outcome-sampled Q estimates per node (chosen action has terminal payoff, others 0).
+    """
+    # Compute baseline V(s) under current strategy on legal actions only
+    # Here we approximate by averaging over available actions (since illegals are zeroed earlier)
+    mean_values = jnp.mean(action_values, axis=-1, keepdims=True)
+    regret_increments = action_values - mean_values
+    new_regrets = accumulate_regrets_fixed(regrets, info_set_indices, regret_increments, sampling_mask, learning_rate)
     
-    # 1. Update regrets (con el learning_rate correcto)
-    new_regrets = accumulate_regrets_fixed(regrets, info_set_indices, action_values, sampling_mask, learning_rate)
-    
-    # 2. APLICAR DESCUENTO (LA PARTE CLAVE QUE FALTABA)
+    # 3. Apply optional CFR+ discounting
     def apply_discount(r):
         return apply_cfr_plus_discounting(r, iteration, config)
     
@@ -181,7 +184,7 @@ def cfr_iteration(
     # Usar lax.cond para que sea compatible con JIT
     new_regrets = lax.cond(use_discounting, apply_discount, no_discount, new_regrets)
     
-    # 3. Update strategy (sin cambios)
+    # 4. Update strategy (regret matching)
     new_strategy = calculate_strategy(new_regrets)
     
     return new_regrets, new_strategy

@@ -585,53 +585,39 @@ def _cfr_step_with_mccfr(
     payoffs, histories, game_results_batch = jax.vmap(generate_and_play_batch)(keys)
     
     def process_single_game(game_idx):
-        hole_cards_batch = game_results_batch['hole_cards'][game_idx]
-        community_cards = game_results_batch['final_community'][game_idx]
-        pot_size = jnp.squeeze(game_results_batch['final_pot'][game_idx])
-        
-        # EXTRACT REAL STACK SIZES
-        player_stacks = game_results_batch['player_stacks'][game_idx]  # Get actual stacks
+        # Trajectory data
+        info_hist = game_results_batch['info_hist'][game_idx]
+        legal_hist = game_results_batch['legal_hist'][game_idx]
+        player_hist = game_results_batch['player_hist'][game_idx]
+        pot_hist = game_results_batch['pot_hist'][game_idx]
+        comm_hist = game_results_batch['comm_hist'][game_idx]
+        hist_len = game_results_batch['hist_len'][game_idx]
+        actions_hist = histories[game_idx][:hist_len]
 
-        def calculate_action_values_for_player(p_idx):
-            hole = hole_cards_batch[p_idx]
-            # Usar la posición real del jugador para una evaluación de fuerza más precisa
-            position = p_idx  # Usar p_idx como posición (0-5)
-            hand_strength = _evaluate_7card_simple(hole, community_cards, position)
-            
-            # Agresividad base de cada acción (mejorada)
-            action_aggressiveness = jnp.array([-1.0, 0.0, 0.2, 0.6, 1.0, 1.5, 2.0, 2.5, 4.0], dtype=jnp.float32)
-            
-            # El modificador de fuerza convierte la fuerza (0-1) a un rango (-1 a 1)
-            strength_modifier = (hand_strength - 0.5) * 2.0
-            
-            # Calcular valores base: manos fuertes hacen acciones agresivas positivas, manos débiles negativas
-            values = action_aggressiveness * strength_modifier * pot_size
+        # Truncate to actual decisions
+        decision_idx = jnp.arange(hist_len)
+        info_ids = info_hist[:hist_len]
+        legal_mask = legal_hist[:hist_len]
+        players = player_hist[:hist_len]
+        # Payoffs per player for this terminal outcome
+        terminal_payoffs = payoffs[game_idx]
 
-            # Penalización adicional para manos muy débiles que intentan ser agresivas
-            # Esto acelera el aprendizaje de FOLD con basura
-            is_very_weak = hand_strength < 0.3
-            penalty_for_aggression = jnp.array([0.0, 0.0, -pot_size, -pot_size*2, -pot_size*3, -pot_size*4, -pot_size*5, -pot_size*6, -pot_size*8], dtype=jnp.float32)
-            
-            final_values = jnp.where(is_very_weak, values + penalty_for_aggression, values)
-            
-            return final_values
+        # Build outcome-sampling Q(s,a): only chosen action gets terminal payoff for acting player; others 0
+        def per_decision_values(i):
+            legal = legal_mask[i]
+            chosen = actions_hist[i]
+            player_idx = players[i].astype(jnp.int32)
+            payoff = terminal_payoffs[player_idx]
+            values = jnp.zeros((config.num_actions,), dtype=jnp.float32)
+            values = values.at[chosen].set(payoff.astype(jnp.float32))
+            values = jnp.where(legal, values, 0.0)
+            return values
 
-        action_values = jax.vmap(calculate_action_values_for_player)(jnp.arange(6))
-        
-        player_indices = jnp.arange(6)
-        pot_size_broadcast = jnp.full(6, pot_size)
-        
-        info_set_indices = jax.vmap(
-            lambda hole_cards, player_idx, pot, stack: compute_info_set_id_enhanced(
-                hole_cards, community_cards, player_idx, jnp.array([pot]), 
-                stack_size=jnp.array([stack]), max_info_sets=config.max_info_sets  # ← FIXED: Use enhanced function
-            )
-        )(hole_cards_batch, player_indices, pot_size_broadcast, player_stacks)
-        
-        return info_set_indices, action_values
+        per_values = jax.vmap(per_decision_values)(decision_idx)
+        return info_ids, per_values
 
     batch_info_sets, batch_action_values = jax.vmap(process_single_game)(jnp.arange(config.batch_size))
-    
+    # Asegurar tipos y aplanado por nodos
     flat_info_sets = batch_info_sets.reshape(-1).astype(jnp.int32)
     flat_action_values = batch_action_values.reshape(-1, config.num_actions)
 
