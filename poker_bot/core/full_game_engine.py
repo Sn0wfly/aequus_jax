@@ -943,5 +943,12 @@ def play_from_state(initial_state: GameState, lut_keys, lut_values, table_size, 
         'final_pot': state.pot,
         'player_stacks': state.stacks,
         'player_bets': state.bets,
-        'positions': jnp.arange(6)
+        'positions': jnp.arange(6),
+        # Trajectory logs for training (match play_one_game)
+        'info_hist': state.info_hist,
+        'legal_hist': state.legal_hist,
+        'player_hist': state.player_hist,
+        'pot_hist': state.pot_hist,
+        'comm_hist': state.comm_hist,
+        'hist_len': state.hist_ptr[0]
     }
