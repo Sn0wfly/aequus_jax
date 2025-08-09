@@ -372,9 +372,11 @@ def apply_action_9(state, action):
     pot_scalar = jnp.squeeze(state.pot)
     # Compute info set id for the acting player using enhanced bucketing
     player_index = jnp.squeeze(state.cur_player).astype(jnp.int32)
-    # Extract hole cards for player
-    hole = state.hole_cards[player_index]
-    info_id = compute_info_set_id_enhanced(hole, state.comm_cards, player_index, state.pot, state.stacks[player_index:player_index+1])
+    # Extract hole cards and stack using dynamic_slice for JIT safety
+    hole_slice = lax.dynamic_slice(state.hole_cards, (player_index, 0), (1, 2))
+    hole = hole_slice[0]
+    stack_slice = lax.dynamic_slice(state.stacks, (player_index,), (1,))
+    info_id = compute_info_set_id_enhanced(hole, state.comm_cards, player_index, state.pot, stack_slice)
 
     new_hist = state2.action_hist.at[idx].set(action)
     new_info_hist = state2.info_hist.at[idx].set(info_id)
@@ -444,8 +446,10 @@ def apply_action_6(state, action):
     legal = get_legal_actions_6(state)
     pot_scalar = jnp.squeeze(state.pot)
     player_index = jnp.squeeze(state.cur_player).astype(jnp.int32)
-    hole = state.hole_cards[player_index]
-    info_id = compute_info_set_id_enhanced(hole, state.comm_cards, player_index, state.pot, state.stacks[player_index:player_index+1])
+    hole_slice = lax.dynamic_slice(state.hole_cards, (player_index, 0), (1, 2))
+    hole = hole_slice[0]
+    stack_slice = lax.dynamic_slice(state.stacks, (player_index,), (1,))
+    info_id = compute_info_set_id_enhanced(hole, state.comm_cards, player_index, state.pot, stack_slice)
 
     new_hist = state2.action_hist.at[idx].set(action)
     new_info_hist = state2.info_hist.at[idx].set(info_id)
