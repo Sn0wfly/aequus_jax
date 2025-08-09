@@ -657,7 +657,7 @@ def run_betting_round_policy(init_state, strategy_table: jax.Array, num_actions=
     )
 
 # ---------- Street ----------
-def play_street(state: GameState, num_cards: int, num_actions: int = 9, strategy_table: jax.Array = None) -> GameState:
+def play_street(state: GameState, num_cards: int, num_actions: int = 9, use_policy=False, strategy_table=None) -> GameState:
     def deal(s: GameState) -> GameState:
         start = s.deck_ptr[0]
         cards = lax.dynamic_slice(s.deck, (start,), (num_cards,))
@@ -677,16 +677,16 @@ def play_street(state: GameState, num_cards: int, num_actions: int = 9, strategy
     def deal_and_bet():
         state_with_cards = lax.cond(num_cards > 0, deal, lambda x: x, state)
         return lax.cond(
-            strategy_table is None,
-            lambda: run_betting_round_uniform(state_with_cards, num_actions),
-            lambda: run_betting_round_policy(state_with_cards, strategy_table, num_actions)
+            use_policy,
+            lambda: run_betting_round_policy(state_with_cards, strategy_table, num_actions),
+            lambda: run_betting_round_uniform(state_with_cards, num_actions)
         )
     
     def just_bet():
         return lax.cond(
-            strategy_table is None,
-            lambda: run_betting_round_uniform(state, num_actions),
-            lambda: run_betting_round_policy(state, strategy_table, num_actions)
+            use_policy,
+            lambda: run_betting_round_policy(state, strategy_table, num_actions),
+            lambda: run_betting_round_uniform(state, num_actions)
         )
     
     # Use lax.cond for JAX compatibility
@@ -731,7 +731,7 @@ def resolve_showdown(state: GameState, lut_keys, lut_values, table_size) -> jax.
 
 # ---------- Game simulation ----------
 @jax.jit
-def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9, strategy_table: jax.Array = None):
+def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9, use_policy=False, strategy_table=None):
     """Play one complete game with MORE DIVERSITY."""
     idx_scalar = jax.random.randint(key, (), 0, 1000000)
     key = jax.random.fold_in(jax.random.PRNGKey(0), idx_scalar)
@@ -772,25 +772,25 @@ def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9, strategy
     random_choice = jax.random.randint(subkey, (), 0, 4)
     
     # Play different game lengths for diversity
-    state = play_street(state, 0, num_actions, strategy_table)   # Always preflop
+    state = play_street(state, 0, num_actions, use_policy, strategy_table)   # Always preflop
     
     state = lax.cond(
         random_choice >= 1,  # 75% chance to see flop
-        lambda s: play_street(s, 3, num_actions, strategy_table),
+        lambda s: play_street(s, 3, num_actions, use_policy, strategy_table),
         lambda s: s,
         state
     )
     
     state = lax.cond(
         random_choice >= 2,  # 50% chance to see turn
-        lambda s: play_street(s, 1, num_actions, strategy_table),
+        lambda s: play_street(s, 1, num_actions, use_policy, strategy_table),
         lambda s: s,
         state
     )
     
     state = lax.cond(
         random_choice >= 3,  # 25% chance to see river
-        lambda s: play_street(s, 1, num_actions, strategy_table),
+        lambda s: play_street(s, 1, num_actions, use_policy, strategy_table),
         lambda s: s,
         state
     )
@@ -818,12 +818,12 @@ def play_one_game(key, lut_keys, lut_values, table_size, num_actions=9, strategy
     }
 
 @jax.jit
-def batch_play(keys, lut_keys, lut_values, table_size, num_actions=9, strategy_table: jax.Array = None):
+def batch_play(keys, lut_keys, lut_values, table_size, num_actions=9, use_policy=False, strategy_table=None):
     """Play multiple games in batch with configurable action space."""
     return jax.vmap(
         play_one_game,
         in_axes=(0, None, None, None, None)
-    )(keys, lut_keys, lut_values, table_size, num_actions, strategy_table)
+    )(keys, lut_keys, lut_values, table_size, num_actions, use_policy, strategy_table)
 
 @jax.jit
 def initial_state_for_idx(idx):
@@ -875,20 +875,20 @@ def initial_state_for_idx(idx):
     )
 
 @jax.jit
-def unified_batch_simulation_with_lut_production(keys, lut_keys, lut_values, table_size, num_actions=9, strategy_table: jax.Array = None):
+def unified_batch_simulation_with_lut_production(keys, lut_keys, lut_values, table_size, num_actions=9, use_policy=False, strategy_table=None):
     """
     Production-ready batch simulation with configurable action space.
     Optimized for speed and memory efficiency.
     """
-    return batch_play(keys, lut_keys, lut_values, table_size, num_actions, strategy_table)
+    return batch_play(keys, lut_keys, lut_values, table_size, num_actions, use_policy, strategy_table)
 
 @jax.jit
-def unified_batch_simulation_with_lut_full(keys, lut_keys, lut_values, table_size, num_actions=9, strategy_table: jax.Array = None):
+def unified_batch_simulation_with_lut_full(keys, lut_keys, lut_values, table_size, num_actions=9, use_policy=False, strategy_table=None):
     """
     Full-featured batch simulation with detailed game data.
     Returns comprehensive game information for analysis.
     """
-    return batch_play(keys, lut_keys, lut_values, table_size, num_actions, strategy_table)
+    return batch_play(keys, lut_keys, lut_values, table_size, num_actions, use_policy, strategy_table)
 
 @jax.jit
 def generate_random_game_state_with_position(key):
