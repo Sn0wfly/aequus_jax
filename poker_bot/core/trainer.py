@@ -591,36 +591,37 @@ def _cfr_step_with_mccfr(
     payoffs, histories, game_results_batch = jax.vmap(generate_and_play_batch)(keys)
     
     def process_single_game(game_idx):
-        # Trajectory data
-        info_hist = game_results_batch['info_hist'][game_idx]
-        legal_hist = game_results_batch['legal_hist'][game_idx]
-        player_hist = game_results_batch['player_hist'][game_idx]
-        pot_hist = game_results_batch['pot_hist'][game_idx]
-        comm_hist = game_results_batch['comm_hist'][game_idx]
+        # Trajectory data (fixed-length per game)
+        info_hist_row = game_results_batch['info_hist'][game_idx]
+        legal_hist_row = game_results_batch['legal_hist'][game_idx]
+        player_hist_row = game_results_batch['player_hist'][game_idx]
+        pot_hist_row = game_results_batch['pot_hist'][game_idx]
+        comm_hist_row = game_results_batch['comm_hist'][game_idx]
         hist_len = game_results_batch['hist_len'][game_idx]
-        actions_hist = histories[game_idx][:hist_len]
+        actions_hist_row = histories[game_idx]
 
-        # Truncate to actual decisions
-        decision_idx = jnp.arange(hist_len)
-        info_ids = info_hist[:hist_len]
-        legal_mask = legal_hist[:hist_len]
-        players = player_hist[:hist_len]
+        # Indices and valid mask (avoid dynamic slicing)
+        max_len = info_hist_row.shape[0]
+        idxs = jnp.arange(max_len)
+        valid_mask = idxs < hist_len
+
         # Payoffs per player for this terminal outcome
         terminal_payoffs = payoffs[game_idx]
 
-        # Build outcome-sampling Q(s,a): only chosen action gets terminal payoff for acting player; others 0
+        # Outcome-sampling Q(s,a) por decisión (con máscara de legalidad y validez)
         def per_decision_values(i):
-            legal = legal_mask[i]
-            chosen = actions_hist[i]
-            player_idx = players[i].astype(jnp.int32)
-            payoff = terminal_payoffs[player_idx]
+            legal = legal_hist_row[i]
+            chosen = actions_hist_row[i]
+            player_idx = player_hist_row[i].astype(jnp.int32)
+            payoff_i = terminal_payoffs[player_idx]
             values = jnp.zeros((config.num_actions,), dtype=jnp.float32)
-            values = values.at[chosen].set(payoff.astype(jnp.float32))
+            values = values.at[chosen].set(payoff_i.astype(jnp.float32))
             values = jnp.where(legal, values, 0.0)
+            values = jnp.where(valid_mask[i], values, jnp.zeros_like(values))
             return values
 
-        per_values = jax.vmap(per_decision_values)(decision_idx)
-        return info_ids, per_values
+        per_values = jax.vmap(per_decision_values)(idxs)
+        return info_hist_row, per_values
 
     batch_info_sets, batch_action_values = jax.vmap(process_single_game)(jnp.arange(config.batch_size))
     # Asegurar tipos y aplanado por nodos
