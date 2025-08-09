@@ -530,6 +530,7 @@ def generate_diverse_game_state(key: jax.Array, num_players: int = 6) -> GameSta
     # Jugador Actual Aleatorio
     current_player = jax.random.randint(k_player, (), 0, num_players)
     
+    hist_len = 60
     return GameState(
         stacks=stacks,
         bets=jnp.zeros((num_players,)),
@@ -542,9 +543,14 @@ def generate_diverse_game_state(key: jax.Array, num_players: int = 6) -> GameSta
         deck=deck,
         deck_ptr=jnp.array([num_players*2 + num_community_cards]),
         acted_this_round=jnp.zeros((num_players,), dtype=jnp.int8),
-        key=k_final, # Usamos la última subclave para el estado final
-        action_hist=jnp.zeros((60,), dtype=jnp.int32),
-        hist_ptr=jnp.array([0])
+        key=k_final,  # Usamos la última subclave para el estado final
+        action_hist=jnp.zeros((hist_len,), dtype=jnp.int32),
+        hist_ptr=jnp.array([0]),
+        info_hist=jnp.zeros((hist_len,), dtype=jnp.int32),
+        legal_hist=jnp.zeros((hist_len, 9), dtype=jnp.bool_),
+        player_hist=jnp.zeros((hist_len,), dtype=jnp.int8),
+        pot_hist=jnp.zeros((hist_len,), dtype=jnp.float32),
+        comm_hist=jnp.full((hist_len, 5), -1, dtype=jnp.int32)
     )
 
 @partial(jax.jit, static_argnames=("config",))
