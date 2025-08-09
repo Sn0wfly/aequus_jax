@@ -582,54 +582,72 @@ def _betting_body_3(state):
     return replace(state, cur_player=jnp.array([next_p], dtype=jnp.int8))
 
 @jax.jit
-def run_betting_round(init_state, num_actions=9, strategy_table: jax.Array = None):
-    """Run betting round with configurable action space."""
+def run_betting_round_uniform(init_state, num_actions=9):
+    """Run betting round sampling uniformly over legal actions."""
     cond = lambda s: ~is_betting_done(s.player_status, s.bets, s.acted_this_round, s.street)
-    
+
+    def body9(s):
+        legal = get_legal_actions_9(s)
+        key, subkey = jax.random.split(s.key)
+        action = jax.random.categorical(subkey, jnp.where(legal, 0.0, -1e9))
+        s = replace(s, key=key)
+        s = apply_action_9(s, action)
+        current_p = jnp.squeeze(s.cur_player)
+        next_p = next_active_player(s.player_status, (current_p + 1) % 6)
+        return replace(s, cur_player=jnp.array([next_p], dtype=jnp.int8))
+
     def run_9_action():
-        # Close over strategy_table for sampling
-        def body_fn(s):
-            legal = get_legal_actions_9(s)
-            key, subkey = jax.random.split(s.key)
-            # Compute info set id for current decision
-            p = jnp.squeeze(s.cur_player).astype(jnp.int32)
-            hole = s.hole_cards[p]
-            stack_slice = lax.dynamic_slice(s.stacks, (p,), (1,))
-            info_id = compute_info_set_id_enhanced(hole, s.comm_cards, p, s.pot, stack_slice)
-            # Fetch strategy probs or fallback to uniform
-            def sample_from_strategy():
-                probs = strategy_table[info_id]
-                probs_masked = jnp.where(legal, probs, 0.0)
-                total = jnp.sum(probs_masked)
-                safe_probs = jnp.where(total > 0, probs_masked / total, jnp.where(legal, 1.0, 0.0))
-                logits = jnp.log(jnp.clip(safe_probs, 1e-12, 1.0))
-                return jax.random.categorical(subkey, logits)
-            def sample_uniform():
-                return jax.random.categorical(subkey, jnp.where(legal, 0.0, -1e9))
-            use_policy = strategy_table is not None
-            action = lax.cond(use_policy, sample_from_strategy, sample_uniform)
-            s2 = replace(s, key=key)
-            s2 = apply_action_9(s2, action)
-            current_p = jnp.squeeze(s2.cur_player)
-            next_p = next_active_player(s2.player_status, (current_p + 1) % 6)
-            return replace(s2, cur_player=jnp.array([next_p], dtype=jnp.int8))
-        return lax.while_loop(cond, body_fn, init_state)
-    
+        return lax.while_loop(cond, body9, init_state)
+
     def run_6_action():
         return lax.while_loop(cond, _betting_body_6, init_state)
-    
+
     def run_3_action():
         return lax.while_loop(cond, _betting_body_3, init_state)
-    
-    # Use lax.cond instead of if statements for JAX compatibility
+
     return lax.cond(
         num_actions == 9,
         run_9_action,
-        lambda: lax.cond(
-            num_actions == 6,
-            run_6_action,
-            run_3_action
-        )
+        lambda: lax.cond(num_actions == 6, run_6_action, run_3_action)
+    )
+
+@jax.jit
+def run_betting_round_policy(init_state, strategy_table: jax.Array, num_actions=9):
+    """Run betting round sampling from strategy_table over legal actions."""
+    cond = lambda s: ~is_betting_done(s.player_status, s.bets, s.acted_this_round, s.street)
+
+    def body9(s):
+        legal = get_legal_actions_9(s)
+        key, subkey = jax.random.split(s.key)
+        p = jnp.squeeze(s.cur_player).astype(jnp.int32)
+        hole = s.hole_cards[p]
+        stack_slice = lax.dynamic_slice(s.stacks, (p,), (1,))
+        info_id = compute_info_set_id_enhanced(hole, s.comm_cards, p, s.pot, stack_slice)
+        probs = strategy_table[info_id]
+        probs_masked = jnp.where(legal, probs, 0.0)
+        total = jnp.sum(probs_masked)
+        safe_probs = jnp.where(total > 0, probs_masked / total, jnp.where(legal, 1.0, 0.0))
+        logits = jnp.log(jnp.clip(safe_probs, 1e-12, 1.0))
+        action = jax.random.categorical(subkey, logits)
+        s = replace(s, key=key)
+        s = apply_action_9(s, action)
+        current_p = jnp.squeeze(s.cur_player)
+        next_p = next_active_player(s.player_status, (current_p + 1) % 6)
+        return replace(s, cur_player=jnp.array([next_p], dtype=jnp.int8))
+
+    def run_9_action():
+        return lax.while_loop(cond, body9, init_state)
+
+    def run_6_action():
+        return lax.while_loop(cond, _betting_body_6, init_state)
+
+    def run_3_action():
+        return lax.while_loop(cond, _betting_body_3, init_state)
+
+    return lax.cond(
+        num_actions == 9,
+        run_9_action,
+        lambda: lax.cond(num_actions == 6, run_6_action, run_3_action)
     )
 
 # ---------- Street ----------
@@ -652,10 +670,18 @@ def play_street(state: GameState, num_cards: int, num_actions: int = 9, strategy
     
     def deal_and_bet():
         state_with_cards = lax.cond(num_cards > 0, deal, lambda x: x, state)
-        return run_betting_round(state_with_cards, num_actions, strategy_table)
+        return lax.cond(
+            strategy_table is None,
+            lambda: run_betting_round_uniform(state_with_cards, num_actions),
+            lambda: run_betting_round_policy(state_with_cards, strategy_table, num_actions)
+        )
     
     def just_bet():
-        return run_betting_round(state, num_actions, strategy_table)
+        return lax.cond(
+            strategy_table is None,
+            lambda: run_betting_round_uniform(state, num_actions),
+            lambda: run_betting_round_policy(state, strategy_table, num_actions)
+        )
     
     # Use lax.cond for JAX compatibility
     return lax.cond(
